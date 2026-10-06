@@ -1,0 +1,106 @@
+using NUnit.Framework;
+
+namespace Chess.Core.Tests
+{
+    public class RulesTests
+    {
+        static Square S(string s) => new Square(s[0] - 'a', s[1] - '1');
+        static Move M(string from, string to, char promo = '\0') => new Move(S(from), S(to), promo);
+
+        static void Play(Game g, params string[] moves)
+        {
+            foreach (var m in moves)
+                Assert.IsNotNull(g.TryMakeMove(M(m.Substring(0, 2), m.Substring(2, 2), m.Length > 4 ? char.ToUpper(m[4]) : '\0')), $"illegal: {m}");
+        }
+
+        [Test]
+        public void FoolsMate()
+        {
+            var g = new Game();
+            Play(g, "f2f3", "e7e5", "g2g4", "d8h4");
+            Assert.AreEqual(GameStatus.Checkmate, g.Status);
+            Assert.AreEqual(PieceColor.Black, g.Winner);
+        }
+
+        [Test] public void Stalemate() => Assert.AreEqual(GameStatus.Stalemate, new Game("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").Status);
+
+        [Test] public void KingVsKing() => Assert.AreEqual(GameStatus.DrawInsufficientMaterial, new Game("8/8/4k3/8/8/4K3/8/8 w - - 0 1").Status);
+        [Test] public void SameColourBishops() => Assert.AreEqual(GameStatus.DrawInsufficientMaterial, new Game("8/8/4k3/2b5/8/4K3/3B4/8 w - - 0 1").Status);
+        [Test] public void OppositeColourBishopsPlayOn() => Assert.AreEqual(GameStatus.Ongoing, new Game("8/8/4k3/3b4/8/4K3/3B4/8 w - - 0 1").Status);
+
+        [Test]
+        public void FiftyMoveRule()
+        {
+            var g = new Game("8/8/4k3/8/8/4K3/4R3/8 w - - 99 80");
+            Play(g, "e2a2");
+            Assert.AreEqual(GameStatus.DrawFiftyMove, g.Status);
+        }
+
+        [Test]
+        public void ThreefoldRepetition()
+        {
+            var g = new Game();
+            Play(g, "g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8");
+            Assert.AreEqual(GameStatus.DrawRepetition, g.Status);
+        }
+
+        [Test]
+        public void EnPassant()
+        {
+            var g = new Game();
+            Play(g, "e2e4", "a7a6", "e4e5", "d7d5");
+            var rec = g.TryMakeMove(M("e5", "d6"));
+            Assert.IsNotNull(rec);
+            Assert.IsNotNull(rec.Captured);
+            Assert.IsNull(g.Board[S("d5")]);
+        }
+
+        [Test]
+        public void CastlingMovesRook()
+        {
+            var g = new Game("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
+            Play(g, "e1c1");
+            Assert.AreEqual(PieceLibrary.Rook, g.Board[S("d1")].Definition);
+            Assert.AreEqual(PieceLibrary.King, g.Board[S("c1")].Definition);
+        }
+
+        [Test]
+        public void CannotCastleThroughCheck()
+        {
+            var g = new Game("r3k2r/8/8/8/8/8/5r2/R3K2R w KQkq - 0 1");
+            Assert.IsFalse(g.GetMovesFrom(S("e1")).Exists(m => m.To == S("g1")));
+        }
+
+        [Test]
+        public void PromotionRequiresChoiceAndUndoRestoresPawn()
+        {
+            const string fen = "8/4P1k1/8/8/8/8/6K1/8 w - - 0 1";
+            var g = new Game(fen);
+            Assert.IsNull(g.TryMakeMove(M("e7", "e8")));
+            Assert.IsNotNull(g.TryMakeMove(M("e7", "e8", 'N')));
+            Assert.AreEqual(PieceLibrary.Knight, g.Board[S("e8")].Definition);
+            g.Undo();
+            Assert.AreEqual(fen, g.ToFen());
+        }
+
+        [Test]
+        public void ResignAndDraw()
+        {
+            var g = new Game();
+            g.Resign(PieceColor.White);
+            Assert.AreEqual(PieceColor.Black, g.Winner);
+
+            var d = new Game();
+            d.OfferDraw(PieceColor.White);
+            d.AcceptDraw();
+            Assert.AreEqual(GameStatus.DrawAgreed, d.Status);
+        }
+
+        [Test]
+        public void PinnedPieceCannotMove()
+        {
+            var g = new Game("4k3/4r3/8/8/8/8/4B3/4K3 w - - 0 1");
+            Assert.IsEmpty(g.GetMovesFrom(S("e2")));
+        }
+    }
+}

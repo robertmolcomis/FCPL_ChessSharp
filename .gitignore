@@ -112,3 +112,23 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# ─────────────── ChessSharp additions ───────────────
+
+# Per-user editor state (layouts, scene view, search settings)
+/[Uu]ser[Ss]ettings/
+
+# Crash-recovery scenes Unity writes after a crash / forced close
+/[Aa]ssets/_[Rr]ecovery/
+/[Aa]ssets/_[Rr]ecovery.meta
+
+# IDE / editor folders (personal settings)
+.vscode/
+.idea/
+.vs/
+*.DotSettings.user
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini

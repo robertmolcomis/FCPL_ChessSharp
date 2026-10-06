@@ -54,7 +54,7 @@ Implementation: standard Unity 2D setup — orthographic camera, `SpriteRenderer
 
 ---
 
-## 5. Milestone 1 — Basic chess, step 1 (board, movement)
+## 5. Milestone 1 — Basic chess, step 1 (board, movement) — ✅ DONE
 
 Scope: 2D board, pieces with their basic movement, click-to-move input, highlights.
 
@@ -93,7 +93,9 @@ Visually distinct types:
 
 ---
 
-## 6. Milestone 2 — Basic chess, step 2 (complete standard chess)
+## 6. Milestone 2 — Basic chess, step 2 (complete standard chess) — ✅ DONE
+
+> Perft passes at depth 5 from the start position and on Kiwipete / positions 3–5 (EditMode tests in `Assets/Tests/EditMode`). Undo implemented; clocks not yet.
 
 - Check, checkmate, stalemate
 - Castling (incl. can't castle out of / through / into check)
@@ -226,3 +228,8 @@ Implementation notes:
 | Board representation | Width × height grid + valid-square mask (supports board shapes) |
 | AI opponent | Own C# alpha-beta search + handcrafted eval now; small NN eval later (§9.1) |
 | Fairy-Stockfish | Rejected as the game AI; dev/testing tool only |
+| Threefold / 50-move | Automatic draw (no claim needed) — simpler for hotseat |
+| Draw offer (hotseat) | Side to move offers; opponent accepts/declines on their turn; making a move declines |
+| Undo | Allowed any time in local PvP; after resign / agreed draw it just reopens the game |
+| HUD | Temporary IMGUI bar (status, Undo, Offer draw, Resign, New game) until a proper UI pass |
+| Castling / en passant | Generic piece abilities (`Castles`, `CastlePartner`, `CreatesEnPassant`, …), not hardcoded to king/rook/pawn |
