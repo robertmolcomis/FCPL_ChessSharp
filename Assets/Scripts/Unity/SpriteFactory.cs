@@ -7,14 +7,14 @@ namespace Chess.Unity
     public static class SpriteFactory
     {
         const int Res = 64;
-        static Sprite _square, _circle, _ring, _corners, _glow;
+        static Sprite _square, _circle, _ring, _corners, _glow, _drop;
 
         /// <summary>
         /// With "Enter Play Mode Options" (domain reload disabled), statics survive between play sessions but the
         /// sprites they point to are destroyed. Clear the cache at the start of every run.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetCache() => _square = _circle = _ring = _corners = _glow = null;
+        static void ResetCache() => _square = _circle = _ring = _corners = _glow = _drop = null;
 
         public static Sprite Square => Get(ref _square, (x, y) => 1f);
 
@@ -43,6 +43,17 @@ namespace Chess.Unity
             float u = (x + 0.5f) / Res, v = (y + 0.5f) / Res;
             float cu = Mathf.Min(u, 1 - u), cv = Mathf.Min(v, 1 - v);
             return cu + cv < 0.22f ? 1f : 0f;
+        });
+
+        /// <summary>Blood drop (round bottom, pointed top) — "pawn has a kill" marker.</summary>
+        public static Sprite Drop => Get(ref _drop, (x, y) =>
+        {
+            float u = (x + 0.5f) / Res - 0.5f, v = (y + 0.5f) / Res;
+            const float cy = 0.36f, r = 0.30f, tip = 0.97f;
+            float circle = (r - Mathf.Sqrt(u * u + (v - cy) * (v - cy))) * Res;
+            // above the centre, the half-width shrinks linearly to 0 at the tip
+            float cone = v >= cy && v <= tip ? (r * (tip - v) / (tip - cy) - Mathf.Abs(u)) * Res : -1f;
+            return Mathf.Clamp01(Mathf.Max(circle, cone));
         });
 
         /// <summary>

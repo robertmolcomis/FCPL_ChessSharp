@@ -12,7 +12,15 @@ namespace Chess.Core
             new MovePrimitive(1, 1, 1, MoveFlags.CaptureOnly),
             new MovePrimitive(-1, 1, 1, MoveFlags.CaptureOnly),
         }, promotesOnLastRank: true,
-           abilities: PieceAbilities.CreatesEnPassant | PieceAbilities.CapturesEnPassant | PieceAbilities.ResetsFiftyMoveClock);
+           abilities: PieceAbilities.CreatesEnPassant | PieceAbilities.CapturesEnPassant | PieceAbilities.ResetsFiftyMoveClock
+                    | PieceAbilities.Berserks,
+           // Berserk (after 2 captures, permanent): may also capture straight ahead and straight behind.
+           berserkExtraMoves: new[]
+           {
+               new MovePrimitive(0, 1, 1, MoveFlags.CaptureOnly),
+               new MovePrimitive(0, -1, 1, MoveFlags.CaptureOnly),
+           },
+           berserkCaptureThreshold: 2);
 
         public static readonly PieceDefinition Knight = new PieceDefinition("knight", "Knight", 'N', Patterns.Leaper(1, 2));
         public static readonly PieceDefinition Bishop = new PieceDefinition("bishop", "Bishop", 'B', Patterns.Bishop());

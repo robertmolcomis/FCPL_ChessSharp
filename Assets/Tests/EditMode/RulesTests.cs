@@ -102,5 +102,85 @@ namespace Chess.Core.Tests
             var g = new Game("4k3/4r3/8/8/8/8/4B3/4K3 w - - 0 1");
             Assert.IsEmpty(g.GetMovesFrom(S("e2")));
         }
-    }
+    
+        // ───── Berserk pawn (M3) ─────
+
+        const string TwoVictims = "4k3/8/8/2p5/3p4/4P3/8/4K3 w - - 0 1";
+
+        [Test]
+        public void PawnGoesBerserkAfterTwoCaptures()
+        {
+            var g = new Game(TwoVictims);
+            Play(g, "e3d4");
+            Assert.IsFalse(g.Board[S("d4")].IsBerserk, "one capture is not enough");
+            Play(g, "e8e7", "d4c5");
+            Assert.IsTrue(g.Board[S("c5")].IsBerserk);
+        }
+
+        [Test]
+        public void UndoRemovesBerserk()
+        {
+            var g = new Game(TwoVictims);
+            Play(g, "e3d4", "e8e7", "d4c5");
+            Assert.IsTrue(g.Undo());
+            Assert.IsFalse(g.Board[S("d4")].IsBerserk);
+        }
+
+        [Test]
+        public void BerserkCapturesStraightAhead()
+        {
+            var g = new Game("4k3/8/1r6/1p6/2p5/3P4/8/4K3 w - - 0 1");
+            Assert.IsFalse(new Game("4k3/8/1r6/1P6/8/8/8/4K3 w - - 0 1").GetMovesFrom(S("b5")).Exists(m => m.To == S("b6")),
+                "a normal pawn can't capture forward");
+            Play(g, "d3c4", "e8e7", "c4b5", "e7e6");
+            Play(g, "b5b6");
+            Assert.IsNull(g.Board[S("b5")]);
+        }
+
+        [Test]
+        public void BerserkCapturesStraightBehind()
+        {
+            var g = new Game("4k3/8/8/1p6/2p4r/3P4/8/4K3 w - - 0 1");
+            Play(g, "d3c4", "e8e7", "c4b5", "h4b4");
+            Play(g, "b5b4");
+            Assert.IsTrue(g.Board[S("b4")].IsBerserk, "berserk is permanent");
+        }
+
+        [Test]
+        public void BerserkStillCannotMoveBackwardToEmptySquare()
+        {
+            var g = new Game(TwoVictims);
+            Play(g, "e3d4", "e8e7", "d4c5", "e7e6");
+            Assert.IsFalse(g.GetMovesFrom(S("c5")).Exists(m => m.To == S("c4")));
+        }
+
+        [Test]
+        public void BerserkPawnGivesCheckStraightAhead()
+        {
+            var g = new Game("8/1k6/8/2p5/3p4/4P3/8/4K3 w - - 0 1");
+            Play(g, "e3d4", "b7c6", "d4c5");
+            Assert.IsTrue(g.IsInCheck(PieceColor.Black));
+        }
+
+        [Test]
+        public void KingCannotStepInFrontOfOrBehindBerserkPawn()
+        {
+            var g = new Game("8/8/8/1kp5/3p4/4P3/8/4K3 w - - 0 1");
+            Play(g, "e3d4", "b5a5", "d4c5", "a5b4");
+            Assert.IsFalse(g.IsInCheck(PieceColor.Black));
+            Play(g, "e1e2");
+            var kingMoves = g.GetMovesFrom(S("b4"));
+            Assert.IsFalse(kingMoves.Exists(m => m.To == S("c4")), "c4 is behind the berserk pawn");
+        }
+
+        [Test]
+        public void BerserkForwardAttackGivesCheckmate()
+        {
+            // c5 pawn takes b6 then a7 → berserk on a7, attacking a8 straight ahead. b8 (Nd7), b7 (Kc6), a7 (Be3) covered.
+            var g = new Game("k7/b2N3p/1nK5/2P5/8/4B3/8/8 w - - 0 1");
+            Play(g, "c5b6", "h7h6", "b6a7");
+            Assert.AreEqual(GameStatus.Checkmate, g.Status);
+            Assert.AreEqual(PieceColor.White, g.Winner);
+        }
+}
 }

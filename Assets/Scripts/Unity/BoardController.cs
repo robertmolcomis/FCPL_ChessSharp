@@ -139,10 +139,11 @@ namespace Chess.Unity
             _pieceViews.Clear();
             foreach (var (sq, piece) in _game.Board.Pieces())
                 _pieceViews[piece.Id] = CreatePieceView(piece.Definition, piece.Color, SquareToWorld(sq), _piecesRoot, OrderPiece,
-                                                        $"{piece} #{piece.Id}");
+                                                        $"{piece} #{piece.Id}", piece.IsBerserk, HasKillMark(piece));
         }
 
-        GameObject CreatePieceView(PieceDefinition def, PieceColor color, Vector3 position, Transform parent, int order, string name)
+        GameObject CreatePieceView(PieceDefinition def, PieceColor color, Vector3 position, Transform parent, int order, string name,
+                                   bool berserk = false, bool killMark = false)
         {
             bool white = color == PieceColor.White;
             var custom = pieceSprites != null ? pieceSprites.Get(def.Symbol, white) : null;
@@ -150,6 +151,13 @@ namespace Chess.Unity
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
             root.transform.position = position;
+
+            if (berserk)
+            {
+                // Berserk aura: red glow behind the piece.
+                var aura = CreateSprite("BerserkAura", root.transform, SpriteFactory.Circle, new Color(0.9f, 0.1f, 0.1f, 0.75f), order - 1);
+                aura.transform.localScale = Vector3.one * squareSize * Mathf.Min(0.98f, pieceScale * 1.12f);
+            }
 
             if (custom != null)
             {
@@ -166,11 +174,23 @@ namespace Chess.Unity
                 var disc = CreateSprite("Disc", root.transform, SpriteFactory.Circle,
                     white ? new Color(0.97f, 0.97f, 0.95f) : new Color(0.13f, 0.13f, 0.15f), order + 1);
                 disc.transform.localScale = Vector3.one * squareSize * pieceScale * 0.88f;
-                CreateLabel(def.Symbol.ToString(), root.transform, position, white ? Color.black : Color.white, 0.09f, order + 2)
+                CreateLabel(def.Symbol + (berserk ? "!" : ""), root.transform, position, white ? Color.black : Color.white, 0.09f, order + 2)
                     .fontStyle = FontStyle.Bold;
+            }
+
+            if (killMark)
+            {
+                // Small blood drop in the top-right corner of the square (child of the piece, so it moves with it).
+                var drop = CreateSprite("KillMark", root.transform, SpriteFactory.Drop, new Color(0.78f, 0.05f, 0.08f), order + 3);
+                drop.transform.localScale = Vector3.one * squareSize * 0.22f;
+                drop.transform.position = position + new Vector3(0.36f, 0.34f, 0) * squareSize;
             }
             return root;
         }
+
+        /// <summary>A pawn (anything that can go berserk) with at least one kill but not berserk yet.</summary>
+        static bool HasKillMark(Piece p) =>
+            p.Definition.Has(PieceAbilities.Berserks) && p.CaptureCount > 0 && !p.IsBerserk;
 
         TextMesh CreateLabel(string text, Transform parent, Vector3 worldPos, Color color, float charSize, int order)
         {
@@ -381,11 +401,13 @@ namespace Chess.Unity
                 _pieceViews.Remove(record.Captured.Id);
             }
 
-            if (record.Promoted)
+            // A capture can change the pawn's look (kill mark → berserk), so rebuild its view.
+            bool killChangedLook = record.Captured != null && record.Mover.Definition.Has(PieceAbilities.Berserks);
+            if (record.Promoted || killChangedLook)
             {
                 Destroy(_pieceViews[record.Mover.Id]);
                 _pieceViews[record.Mover.Id] = CreatePieceView(record.Mover.Definition, record.Mover.Color,
-                    SquareToWorld(m.To), _piecesRoot, OrderPiece, $"{record.Mover} #{record.Mover.Id}");
+                    SquareToWorld(m.To), _piecesRoot, OrderPiece, $"{record.Mover} #{record.Mover.Id}", record.Mover.IsBerserk, HasKillMark(record.Mover));
             }
 
             _state = InputState.Idle;

@@ -18,6 +18,12 @@ namespace Chess.Core
         public bool HasMoved => MoveCount > 0;
         public bool IsRoyal => Definition.IsRoyal;
 
+        /// <summary>Permanently berserk once it has made enough captures (only for pieces with the Berserks ability).</summary>
+        public bool IsBerserk => Definition.Has(PieceAbilities.Berserks) && CaptureCount >= Definition.BerserkCaptureThreshold;
+
+        /// <summary>Movement primitives currently in effect (used by move generation AND attack detection).</summary>
+        public System.Collections.Generic.IReadOnlyList<MovePrimitive> Moves => IsBerserk ? Definition.BerserkMoves : Definition.Moves;
+
         public Piece(PieceDefinition definition, PieceColor color)
         {
             Id = System.Threading.Interlocked.Increment(ref _nextId);
@@ -29,8 +35,11 @@ namespace Chess.Core
         /// Extra state that must be part of the position hash (modifiers, on-wall, berserk…). 0 = none.
         /// M3 power-ups extend this.
         /// </summary>
-        public ulong StateHash() => 0UL;
+        public ulong StateHash() => IsBerserk ? 0xBE55E2C0UL : 0UL;
 
-        public override string ToString() => $"{Color} {Definition}";
+        /// <summary>Name shown for this piece: the definition name, or the symbol + "!" when berserk (a berserk pawn is "P!").</summary>
+        public string DisplayName => IsBerserk ? Definition.Symbol + "!" : Definition.DisplayName;
+
+        public override string ToString() => $"{Color} {DisplayName}";
     }
 }

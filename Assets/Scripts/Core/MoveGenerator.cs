@@ -14,7 +14,7 @@ namespace Chess.Core
             int fwd = piece.Color.Forward();
             int start = output.Count;
 
-            foreach (var prim in piece.Definition.Moves)
+            foreach (var prim in piece.Moves)
             {
                 if ((prim.Flags & MoveFlags.FirstMoveOnly) != 0 && piece.HasMoved) continue;
 
@@ -39,7 +39,7 @@ namespace Chess.Core
                                 kind = MoveKind.DoubleStep;
                             Add(game, from, sq, piece, kind, default, output, start);
                         }
-                        else if (step == 1 && game.EnPassantSquare == sq &&
+                        else if (step == 1 && dx != 0 && game.EnPassantSquare == sq &&
                                  piece.Definition.Has(PieceAbilities.CapturesEnPassant))
                         {
                             var victim = board[game.EnPassantVictim];
@@ -140,7 +140,7 @@ namespace Chess.Core
             int tx = target.File - from.File, ty = target.Rank - from.Rank;
             if (tx == 0 && ty == 0) return false;
 
-            foreach (var prim in piece.Definition.Moves)
+            foreach (var prim in piece.Moves)
             {
                 if ((prim.Flags & MoveFlags.MoveOnly) != 0) continue;
                 if ((prim.Flags & MoveFlags.FirstMoveOnly) != 0 && piece.HasMoved) continue;
