@@ -17,6 +17,7 @@ namespace Chess.Core
 
         public bool HasMoved => MoveCount > 0;
         public bool IsRoyal => Definition.IsRoyal;
+        public bool IsWall => Definition.Has(PieceAbilities.Wall);
 
         /// <summary>Permanently berserk once it has made enough captures (only for pieces with the Berserks ability).</summary>
         public bool IsBerserk => Definition.Has(PieceAbilities.Berserks) && CaptureCount >= Definition.BerserkCaptureThreshold;

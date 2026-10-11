@@ -16,7 +16,7 @@ namespace Chess.Core.Tests
         [Test]
         public void FoolsMate()
         {
-            var g = new Game();
+            var g = new Game(Game.ClassicFen);
             Play(g, "f2f3", "e7e5", "g2g4", "d8h4");
             Assert.AreEqual(GameStatus.Checkmate, g.Status);
             Assert.AreEqual(PieceColor.Black, g.Winner);
@@ -39,7 +39,7 @@ namespace Chess.Core.Tests
         [Test]
         public void ThreefoldRepetition()
         {
-            var g = new Game();
+            var g = new Game(Game.ClassicFen);
             Play(g, "g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8");
             Assert.AreEqual(GameStatus.DrawRepetition, g.Status);
         }
@@ -47,7 +47,7 @@ namespace Chess.Core.Tests
         [Test]
         public void EnPassant()
         {
-            var g = new Game();
+            var g = new Game(Game.ClassicFen);
             Play(g, "e2e4", "a7a6", "e4e5", "d7d5");
             var rec = g.TryMakeMove(M("e5", "d6"));
             Assert.IsNotNull(rec);
@@ -86,11 +86,11 @@ namespace Chess.Core.Tests
         [Test]
         public void ResignAndDraw()
         {
-            var g = new Game();
+            var g = new Game(Game.ClassicFen);
             g.Resign(PieceColor.White);
             Assert.AreEqual(PieceColor.Black, g.Winner);
 
-            var d = new Game();
+            var d = new Game(Game.ClassicFen);
             d.OfferDraw(PieceColor.White);
             d.AcceptDraw();
             Assert.AreEqual(GameStatus.DrawAgreed, d.Status);
@@ -181,6 +181,111 @@ namespace Chess.Core.Tests
             Play(g, "c5b6", "h7h6", "b6a7");
             Assert.AreEqual(GameStatus.Checkmate, g.Status);
             Assert.AreEqual(PieceColor.White, g.Winner);
+        }
+
+        // ───── Walls (M3) ─────
+
+        [Test]
+        public void StartLayoutHasWallsAndAdvancedCentrePawns()
+        {
+            var g = new Game();
+            foreach (var w in new[] { "c3", "f3", "c6", "f6" }) Assert.IsTrue(g.Board[S(w)].IsWall, w);
+            Assert.AreEqual(PieceColor.White, g.Board[S("c3")].Color);
+            Assert.AreEqual(PieceColor.Black, g.Board[S("f6")].Color);
+            foreach (var p in new[] { "d3", "e3", "d6", "e6" }) Assert.AreEqual(PieceLibrary.Pawn, g.Board[S(p)].Definition, p);
+            Assert.IsNull(g.Board[S("d2")]);
+            Assert.IsNull(g.Board[S("e7")]);
+        }
+
+        [Test]
+        public void WallsNeverMove() => Assert.IsEmpty(new Game().GetMovesFrom(S("c3")));
+
+        [Test]
+        public void PieceCanClimbOwnWallButNotPassIt()
+        {
+            var g = new Game();
+            var pawn = g.GetMovesFrom(S("c2"));
+            Assert.IsTrue(pawn.Exists(m => m.To == S("c3")), "pawn steps onto its wall");
+            Assert.IsFalse(pawn.Exists(m => m.To == S("c4")), "no double step over the wall");
+            Play(g, "c2c3");
+            Assert.IsTrue(g.Board.IsShielded(S("c3")));
+            Assert.AreEqual(PieceLibrary.Pawn, g.Board[S("c3")].Definition);
+            Assert.IsTrue(g.Board.WallAt(S("c3")) != null);
+        }
+
+        [Test]
+        public void SliderStopsOnWall()
+        {
+            // White rook a3: can climb own wall c3 but not go past it.
+            var g = new Game("4k3/8/8/8/8/R1W5/8/4K3 w - - 0 1");
+            var moves = g.GetMovesFrom(S("a3"));
+            Assert.IsTrue(moves.Exists(m => m.To == S("c3")));
+            Assert.IsFalse(moves.Exists(m => m.To == S("d3")));
+        }
+
+        [Test]
+        public void KnightCannotJumpOverWall()
+        {
+            // b1→c3 passes b2,b3. Wall on b2 blocks it; b1→a3 also passes b2,b3.
+            var g = new Game("r3k3/8/8/8/8/8/1W6/1N2K3 w - - 0 1");
+            var moves = g.GetMovesFrom(S("b1"));
+            Assert.IsFalse(moves.Exists(m => m.To == S("c3") || m.To == S("a3")));
+            Assert.IsTrue(moves.Exists(m => m.To == S("d2")), "b1→d2 passes c1,d1 — not blocked");
+        }
+
+        [Test]
+        public void KnightBehindWallGivesNoCheck()
+        {
+            // black knight d3 → e1 would pass d2? (long leg vertical: d2, d1) — wall on d2 blocks the check.
+            Assert.IsFalse(new Game("4k3/8/8/8/8/3n4/3W4/4K3 w - - 0 1").IsInCheck(PieceColor.White));
+            Assert.IsTrue(new Game("4k3/8/8/8/8/3n4/8/4K3 w - - 0 1").IsInCheck(PieceColor.White));
+        }
+
+        [Test]
+        public void EmptyEnemyWallIsCapturedNormally()
+        {
+            var g = new Game("4k3/8/8/8/8/2w5/8/2R1K3 w - - 0 1");
+            Play(g, "c1c3");
+            Assert.AreEqual(PieceLibrary.Rook, g.Board[S("c3")].Definition);
+            Assert.IsNull(g.Board.WallAt(S("c3")));
+            Assert.AreEqual(0, g.Board[S("c3")].CaptureCount, "a wall is not a kill");
+        }
+
+        [Test]
+        public void CapturingPieceOnWallDestroysWallAndBounces()
+        {
+            // black knight stands on its wall c6; white rook c1 "captures" it.
+            var g2 = new Game("4k3/8/2w5/8/3n4/8/8/2R1K3 b - - 0 1");
+            Play(g2, "d4c6");
+            Assert.IsTrue(g2.Board.IsShielded(S("c6")));
+            var rec = g2.TryMakeMove(M("c1", "c6"));
+            Assert.IsNotNull(rec);
+            Assert.IsTrue(rec.Bounced);
+            Assert.AreEqual(PieceLibrary.Rook, g2.Board[S("c1")].Definition, "rook went back");
+            Assert.AreEqual(PieceLibrary.Knight, g2.Board[S("c6")].Definition, "knight survives");
+            Assert.IsNull(g2.Board.WallAt(S("c6")), "wall destroyed");
+            Assert.IsTrue(g2.Undo());
+            Assert.IsTrue(g2.Board.IsShielded(S("c6")), "undo restores the wall");
+        }
+
+        [Test]
+        public void KingOnWallIsNotInCheck()
+        {
+            // White king on its wall e2, attacked by black rook e8 — it can't be captured, so no check.
+            var g2 = new Game("4r2k/8/8/8/8/8/3KW3/8 w - - 0 1");
+            Play(g2, "d2e2");
+            Assert.IsTrue(g2.Board.IsShielded(S("e2")));
+            Play(g2, "h8g8");
+            Assert.IsFalse(g2.IsInCheck(PieceColor.White));
+            Assert.AreNotEqual(GameStatus.Checkmate, g2.Status);
+        }
+
+        [Test]
+        public void BerserkIgnoresWallKills()
+        {
+            var g = new Game("4k3/8/8/8/8/3w4/4P3/4K3 w - - 0 1");
+            Play(g, "e2d3");
+            Assert.AreEqual(0, g.Board[S("d3")].CaptureCount);
         }
 }
 }

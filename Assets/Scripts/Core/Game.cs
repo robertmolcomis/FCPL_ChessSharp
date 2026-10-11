@@ -11,7 +11,10 @@ namespace Chess.Core
     /// </summary>
     public sealed class Game
     {
-        public const string StartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        /// <summary>Default start: walls on c3/f3 (White) and c6/f6 (Black), d/e pawns one square forward.</summary>
+        public const string StartFen = "rnbqkbnr/ppp2ppp/2wppw2/8/8/2WPPW2/PPP2PPP/RNBQKBNR w KQkq - 0 1";
+        /// <summary>Classic chess start position (no walls).</summary>
+        public const string ClassicFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
         public Board Board { get; }
         public PieceColor SideToMove { get; private set; } = PieceColor.White;
@@ -73,7 +76,7 @@ namespace Chess.Core
         public bool IsInCheck(PieceColor color)
         {
             foreach (var (sq, p) in Board.Pieces())
-                if (p.IsRoyal && p.Color == color && MoveGenerator.IsAttacked(Board, sq, color.Opponent()))
+                if (p.IsRoyal && p.Color == color && !Board.IsShielded(sq) && MoveGenerator.IsAttacked(Board, sq, color.Opponent()))
                     return true;
             return false;
         }
@@ -83,7 +86,7 @@ namespace Chess.Core
         {
             var list = new List<Square>();
             foreach (var (sq, p) in Board.Pieces())
-                if (p.IsRoyal && p.Color == color && MoveGenerator.IsAttacked(Board, sq, color.Opponent()))
+                if (p.IsRoyal && p.Color == color && !Board.IsShielded(sq) && MoveGenerator.IsAttacked(Board, sq, color.Opponent()))
                     list.Add(sq);
             return list;
         }
@@ -101,6 +104,16 @@ namespace Chess.Core
                 foreach (var m in pseudo) if (m.Kind == MoveKind.EnPassant && IsLegal(m)) return true;
             }
             return false;
+        }
+
+        /// <summary>Does this move take something (a piece, an empty enemy wall, or the wall under a piece)?</summary>
+        public bool IsCapture(Move m)
+        {
+            if (m.Kind == MoveKind.EnPassant) return true;
+            if (m.Kind == MoveKind.Castle) return false;
+            var mover = Board[m.From];
+            var target = Board[m.To];
+            return mover != null && target != null && target.Color != mover.Color;
         }
 
         // ───────────────────────── Commands ─────────────────────────
@@ -237,6 +250,7 @@ namespace Chess.Core
             var before = mover.Definition;
             Piece captured = null, partner = null;
             Square capSq = m.To;
+            bool bounced = false;
 
             if (m.Kind == MoveKind.Castle)
             {
@@ -248,21 +262,31 @@ namespace Chess.Core
                 Board[m.To.Offset(-dir, 0)] = partner;
                 partner.MoveCount++;
             }
+            else if (Board.IsShielded(m.To) && Board.OccupantAt(m.To).Color != mover.Color)
+            {
+                // "Second life": the wall is destroyed instead, the attacker goes back where it came from (never left).
+                bounced = true;
+                captured = Board.WallAt(m.To);
+                Board.RemoveWall(m.To);
+            }
             else
             {
                 if (m.Kind == MoveKind.EnPassant) capSq = m.Aux;
-                captured = Board[capSq];
-                if (captured != null) Board[capSq] = null;
+                var occupant = Board.OccupantAt(capSq);
+                var wall = Board.WallAt(capSq);
+                if (occupant != null && occupant.Color != mover.Color) { captured = occupant; Board[capSq] = null; }
+                else if (wall != null && wall.Color != mover.Color) { captured = wall; Board.RemoveWall(capSq); }
+                // (an own wall with nobody on it is simply climbed)
                 Board[m.From] = null;
                 Board[m.To] = mover;
             }
 
             mover.MoveCount++;
-            if (captured != null) mover.CaptureCount++;
-            if (m.IsPromotion && PieceLibrary.BySymbol.TryGetValue(m.Promotion, out var promo))
+            if (captured != null && !captured.IsWall) mover.CaptureCount++; // walls aren't kills (berserk)
+            if (!bounced && m.IsPromotion && PieceLibrary.BySymbol.TryGetValue(m.Promotion, out var promo))
                 mover.Definition = promo;
 
-            var rec = new MoveRecord(m, mover, captured, capSq, before, EnPassantSquare, EnPassantVictim, HalfmoveClock, partner);
+            var rec = new MoveRecord(m, mover, captured, capSq, before, EnPassantSquare, EnPassantVictim, HalfmoveClock, partner, bounced);
 
             if (m.Kind == MoveKind.DoubleStep)
             {
@@ -292,7 +316,7 @@ namespace Chess.Core
 
             mover.Definition = rec.DefinitionBefore;
             mover.MoveCount--;
-            if (rec.Captured != null) mover.CaptureCount--;
+            if (rec.Captured != null && !rec.Captured.IsWall) mover.CaptureCount--;
 
             if (m.Kind == MoveKind.Castle)
             {
@@ -303,9 +327,13 @@ namespace Chess.Core
                 Board[m.Aux] = rec.CastlePartner;
                 rec.CastlePartner.MoveCount--;
             }
+            else if (rec.Bounced)
+            {
+                Board[rec.CapturedSquare] = rec.Captured; // put the wall back under its piece
+            }
             else
             {
-                Board[m.To] = null;
+                Board[m.To] = null;                        // clears the piece layer only; an own wall stays
                 Board[m.From] = mover;
                 if (rec.Captured != null) Board[rec.CapturedSquare] = rec.Captured;
             }
@@ -352,7 +380,7 @@ namespace Chess.Core
             int bishopColours = 0; // bit 0 = light, bit 1 = dark
             foreach (var (sq, p) in Board.Pieces())
             {
-                if (p.IsRoyal) continue;
+                if (p.IsRoyal || p.IsWall) continue;
                 if (p.Definition == PieceLibrary.Knight) { knights++; minors++; }
                 else if (p.Definition == PieceLibrary.Bishop) { minors++; bishopColours |= (sq.File + sq.Rank) % 2 == 0 ? 2 : 1; }
                 else return false;

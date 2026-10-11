@@ -42,7 +42,7 @@ namespace Chess.Unity
         [SerializeField] string startFen = "";
 
         // Sorting orders (back → front)
-        const int OrderSquare = 0, OrderTint = 1, OrderCheck = 2, OrderPiece = 3, OrderMarker = 6,
+        const int OrderSquare = 0, OrderWall = 1, OrderTint = 2, OrderCheck = 3, OrderPiece = 4, OrderMarker = 7,
                   OrderMoving = 10, OrderOverlay = 20, OrderPicker = 21;
 
         Game _game;
@@ -138,7 +138,8 @@ namespace Chess.Unity
             foreach (var go in _pieceViews.Values) Destroy(go);
             _pieceViews.Clear();
             foreach (var (sq, piece) in _game.Board.Pieces())
-                _pieceViews[piece.Id] = CreatePieceView(piece.Definition, piece.Color, SquareToWorld(sq), _piecesRoot, OrderPiece,
+                _pieceViews[piece.Id] = CreatePieceView(piece.Definition, piece.Color, SquareToWorld(sq), _piecesRoot,
+                                                        piece.IsWall ? OrderWall : OrderPiece,
                                                         $"{piece} #{piece.Id}", piece.IsBerserk, HasKillMark(piece));
         }
 
@@ -159,7 +160,20 @@ namespace Chess.Unity
                 aura.transform.localScale = Vector3.one * squareSize * Mathf.Min(0.98f, pieceScale * 1.12f);
             }
 
-            if (custom != null)
+            if (custom == null && def.Has(PieceAbilities.Wall))
+            {
+                // Placeholder wall: brick tile; the backing colour shows through as mortar and outline.
+                float s = squareSize * 0.92f;
+                var backing = CreateSprite("WallBacking", root.transform, SpriteFactory.Square,
+                    white ? new Color(0.35f, 0.33f, 0.31f) : new Color(0.85f, 0.83f, 0.78f), order);
+                backing.transform.localScale = Vector3.one * s;
+                var bricks = CreateSprite("Bricks", root.transform, SpriteFactory.Bricks,
+                    white ? new Color(0.90f, 0.86f, 0.78f) : new Color(0.36f, 0.30f, 0.28f), order);
+                bricks.transform.localScale = Vector3.one * s;
+                bricks.sortingOrder = order; // same layer, drawn after the backing
+                bricks.transform.localPosition = new Vector3(0, 0, -0.001f);
+            }
+            else if (custom != null)
             {
                 var sr = CreateSprite("Sprite", root.transform, custom, Color.white, order);
                 // Fit any PNG into the square regardless of its pixels-per-unit.
@@ -261,7 +275,7 @@ namespace Chess.Unity
         {
             if (_game.IsOver) return;
             var piece = _game.Board[sq];
-            bool ownPiece = piece != null && piece.Color == _game.SideToMove;
+            bool ownPiece = piece != null && piece.Color == _game.SideToMove && !piece.IsWall; // walls never move
 
             switch (_state)
             {
@@ -376,6 +390,8 @@ namespace Chess.Unity
             {
                 (_pieceViews[record.Mover.Id], SquareToWorld(m.From), SquareToWorld(m.To)),
             };
+            // Bounce (target stood on a wall): lunge toward the target, smash the wall, come back.
+            bool bounce = record.Bounced;
             if (m.Kind == MoveKind.Castle && record.CastlePartner != null)
             {
                 int dir = m.To.File > m.From.File ? 1 : -1;
@@ -383,15 +399,16 @@ namespace Chess.Unity
             }
 
             foreach (var mv in moving) SetSortingOffset(mv.view, OrderMoving - OrderPiece);
-            for (float t = 0; t < 1f; t += Time.deltaTime / Mathf.Max(0.0001f, moveDuration))
+            float duration = Mathf.Max(0.0001f, moveDuration) * (bounce ? 2f : 1f);
+            for (float t = 0; t < 1f; t += Time.deltaTime / duration)
             {
-                float e = 1f - (1f - t) * (1f - t); // ease-out
+                float e = bounce ? 0.65f * Mathf.Sin(t * Mathf.PI) : 1f - (1f - t) * (1f - t); // out-and-back / ease-out
                 foreach (var mv in moving) mv.view.transform.position = Vector3.Lerp(mv.from, mv.to, e);
                 yield return null;
             }
             foreach (var mv in moving)
             {
-                mv.view.transform.position = mv.to;
+                mv.view.transform.position = bounce ? mv.from : mv.to;
                 SetSortingOffset(mv.view, OrderPiece - OrderMoving);
             }
 
@@ -407,7 +424,7 @@ namespace Chess.Unity
             {
                 Destroy(_pieceViews[record.Mover.Id]);
                 _pieceViews[record.Mover.Id] = CreatePieceView(record.Mover.Definition, record.Mover.Color,
-                    SquareToWorld(m.To), _piecesRoot, OrderPiece, $"{record.Mover} #{record.Mover.Id}", record.Mover.IsBerserk, HasKillMark(record.Mover));
+                    SquareToWorld(record.MoverSquare), _piecesRoot, OrderPiece, $"{record.Mover} #{record.Mover.Id}", record.Mover.IsBerserk, HasKillMark(record.Mover));
             }
 
             _state = InputState.Idle;
@@ -444,7 +461,7 @@ namespace Chess.Unity
                     foreach (var m in _selectedMoves)
                     {
                         if (!drawn.Add(m.To)) continue; // 4 promotion moves share one square
-                        bool capture = _game.Board[m.To] != null || m.Kind == MoveKind.EnPassant;
+                        bool capture = _game.IsCapture(m); // climbing your own wall is not a capture
                         if (capture)
                         {
                             AddHighlight(m.To, SpriteFactory.Corners, captureColor, 1f, OrderMarker);

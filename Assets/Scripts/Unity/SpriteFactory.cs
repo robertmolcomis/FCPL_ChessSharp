@@ -7,14 +7,14 @@ namespace Chess.Unity
     public static class SpriteFactory
     {
         const int Res = 64;
-        static Sprite _square, _circle, _ring, _corners, _glow, _drop;
+        static Sprite _square, _circle, _ring, _corners, _glow, _drop, _bricks;
 
         /// <summary>
         /// With "Enter Play Mode Options" (domain reload disabled), statics survive between play sessions but the
         /// sprites they point to are destroyed. Clear the cache at the start of every run.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetCache() => _square = _circle = _ring = _corners = _glow = _drop = null;
+        static void ResetCache() => _square = _circle = _ring = _corners = _glow = _drop = _bricks = null;
 
         public static Sprite Square => Get(ref _square, (x, y) => 1f);
 
@@ -43,6 +43,17 @@ namespace Chess.Unity
             float u = (x + 0.5f) / Res, v = (y + 0.5f) / Res;
             float cu = Mathf.Min(u, 1 - u), cv = Mathf.Min(v, 1 - v);
             return cu + cv < 0.22f ? 1f : 0f;
+        });
+
+        /// <summary>Brick pattern (bricks opaque, mortar + a thin border transparent) — the wall piece.</summary>
+        public static Sprite Bricks => Get(ref _bricks, (x, y) =>
+        {
+            const int border = 3, rowH = 15, brickW = 29, mortar = 2;
+            if (x < border || y < border || x >= Res - border || y >= Res - border) return 0f;
+            int yy = y - border, row = yy / rowH;
+            if (yy % rowH < mortar) return 0f;                                  // horizontal mortar
+            int xx = x - border + (row % 2 == 1 ? brickW / 2 : 0);              // stagger every other row
+            return xx % brickW < mortar ? 0f : 1f;                              // vertical joints
         });
 
         /// <summary>Blood drop (round bottom, pointed top) — "pawn has a kill" marker.</summary>

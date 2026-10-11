@@ -46,6 +46,12 @@ namespace Chess.Core
         public PieceDefinition DefinitionBefore { get; }
         public bool Promoted => Mover.Definition != DefinitionBefore;
         public bool GaveCheck { get; internal set; }
+        /// <summary>
+        /// The target stood on a wall: the wall was destroyed (Captured = the wall) and the mover stayed on Move.From.
+        /// </summary>
+        public bool Bounced { get; }
+        /// <summary>Square the mover ends on (Move.From after a bounce).</summary>
+        public Square MoverSquare => Bounced ? Move.From : Move.To;
 
         // Undo info
         internal Square? PrevEnPassant { get; }
@@ -55,8 +61,9 @@ namespace Chess.Core
         public Piece CastlePartner { get; }
 
         internal MoveRecord(Move move, Piece mover, Piece captured, Square capturedSquare, PieceDefinition before,
-                            Square? prevEp, Square prevEpVictim, int prevHalfmove, Piece castlePartner)
+                            Square? prevEp, Square prevEpVictim, int prevHalfmove, Piece castlePartner, bool bounced = false)
         {
+            Bounced = bounced;
             Move = move; Mover = mover; Captured = captured; CapturedSquare = capturedSquare; DefinitionBefore = before;
             PrevEnPassant = prevEp; PrevEnPassantVictim = prevEpVictim; PrevHalfmoveClock = prevHalfmove;
             CastlePartner = castlePartner;

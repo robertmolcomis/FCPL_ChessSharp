@@ -32,13 +32,20 @@ namespace Chess.Core
         public static readonly PieceDefinition Archbishop = new PieceDefinition("archbishop", "Archbishop", 'A', Patterns.Concat(Patterns.Bishop(), Patterns.Leaper(1, 2)));
         public static readonly PieceDefinition Chancellor = new PieceDefinition("chancellor", "Chancellor", 'C', Patterns.Concat(Patterns.Rook(), Patterns.Leaper(1, 2)));
 
+        /// <summary>
+        /// Wall: never moves, nothing passes over it (knights included). A friendly piece may stand on it; capturing that
+        /// piece destroys the wall instead and the attacker stays where it was. An empty wall is captured like a piece.
+        /// </summary>
+        public static readonly PieceDefinition Wall = new PieceDefinition("wall", "Wall", 'W', new MovePrimitive[0],
+            abilities: PieceAbilities.Wall);
+
         /// <summary>What a pawn may promote to, in picker order.</summary>
         public static readonly char[] PromotionChoices = { 'Q', 'R', 'B', 'N' };
 
         public static readonly IReadOnlyDictionary<char, PieceDefinition> BySymbol = new Dictionary<char, PieceDefinition>
         {
             ['P'] = Pawn, ['N'] = Knight, ['B'] = Bishop, ['R'] = Rook, ['Q'] = Queen, ['K'] = King,
-            ['A'] = Archbishop, ['C'] = Chancellor,
+            ['A'] = Archbishop, ['C'] = Chancellor, ['W'] = Wall,
         };
     }
 }

@@ -50,6 +50,7 @@ namespace Chess.Core
         CreatesEnPassant = 1 << 2,     // a 2-square straight move leaves an en-passant square (pawn)
         CapturesEnPassant = 1 << 3,    // capture-only steps may land on the en-passant square (pawn)
         ResetsFiftyMoveClock = 1 << 4, // moving it is irreversible (pawn)
+        Wall = 1 << 6,                 // immobile; blocks everything (even leapers); a friendly piece may stand on it
         Berserks = 1 << 5,             // after BerserkCaptureThreshold captures, permanently gains BerserkMoves (pawn)
     }
 
