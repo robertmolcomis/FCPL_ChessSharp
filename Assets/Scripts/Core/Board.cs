@@ -99,7 +99,7 @@ namespace Chess.Core
         }
 
         public const string StandardStart = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
-        /// <summary>FCPL start: walls on c3/f3 and c6/f6, d- and e-pawns already one square forward.</summary>
-        public const string WallStart = "rnbqkbnr/ppp2ppp/2wppw2/8/8/2WPPW2/PPP2PPP/RNBQKBNR";
+        /// <summary>FCPL start: walls on c3/f3 and c6/f6, d- and e-pawns one square forward, archbishops on e2/e7.</summary>
+        public const string WallStart = "rnbqkbnr/ppp1appp/2wppw2/8/8/2WPPW2/PPP1APPP/RNBQKBNR";
     }
 }

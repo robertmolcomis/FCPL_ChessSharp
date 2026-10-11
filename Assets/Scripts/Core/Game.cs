@@ -11,8 +11,11 @@ namespace Chess.Core
     /// </summary>
     public sealed class Game
     {
-        /// <summary>Default start: walls on c3/f3 (White) and c6/f6 (Black), d/e pawns one square forward.</summary>
-        public const string StartFen = "rnbqkbnr/ppp2ppp/2wppw2/8/8/2WPPW2/PPP2PPP/RNBQKBNR w KQkq - 0 1";
+        /// <summary>
+        /// Default start: walls on c3/f3 (White) and c6/f6 (Black), d/e pawns one square forward,
+        /// one archbishop in front of each king (e2 / e7).
+        /// </summary>
+        public const string StartFen = "rnbqkbnr/ppp1appp/2wppw2/8/8/2WPPW2/PPP1APPP/RNBQKBNR w KQkq - 0 1";
         /// <summary>Classic chess start position (no walls).</summary>
         public const string ClassicFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 

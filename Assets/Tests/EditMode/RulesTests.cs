@@ -194,7 +194,7 @@ namespace Chess.Core.Tests
             Assert.AreEqual(PieceColor.Black, g.Board[S("f6")].Color);
             foreach (var p in new[] { "d3", "e3", "d6", "e6" }) Assert.AreEqual(PieceLibrary.Pawn, g.Board[S(p)].Definition, p);
             Assert.IsNull(g.Board[S("d2")]);
-            Assert.IsNull(g.Board[S("e7")]);
+            Assert.IsNull(g.Board[S("d7")]);
         }
 
         [Test]
@@ -286,6 +286,48 @@ namespace Chess.Core.Tests
             var g = new Game("4k3/8/8/8/8/3w4/4P3/4K3 w - - 0 1");
             Play(g, "e2d3");
             Assert.AreEqual(0, g.Board[S("d3")].CaptureCount);
+        }
+
+        // ───── Archbishop ─────
+
+        [Test]
+        public void OneArchbishopInFrontOfEachKing()
+        {
+            var g = new Game();
+            Assert.AreEqual(PieceLibrary.Archbishop, g.Board[S("e2")].Definition);
+            Assert.AreEqual(PieceColor.White, g.Board[S("e2")].Color);
+            Assert.AreEqual(PieceLibrary.Archbishop, g.Board[S("e7")].Definition);
+            Assert.AreEqual(PieceColor.Black, g.Board[S("e7")].Color);
+            int count = 0;
+            foreach (var (_, p) in g.Board.Pieces()) if (p.Definition == PieceLibrary.Archbishop) count++;
+            Assert.AreEqual(2, count, "one per side");
+        }
+
+        [Test]
+        public void ArchbishopMovesLikeBishopAndKnight()
+        {
+            var g = new Game("4k3/8/8/8/3A4/8/8/4K3 w - - 0 1");
+            var moves = g.GetMovesFrom(S("d4"));
+            Assert.IsTrue(moves.Exists(m => m.To == S("h8")), "bishop slide");
+            Assert.IsTrue(moves.Exists(m => m.To == S("a1")), "bishop slide");
+            Assert.IsTrue(moves.Exists(m => m.To == S("e6")), "knight jump");
+            Assert.IsTrue(moves.Exists(m => m.To == S("b3")), "knight jump");
+            Assert.IsFalse(moves.Exists(m => m.To == S("d5")), "no rook moves");
+            Assert.AreEqual(13 + 8, moves.Count);
+        }
+
+        [Test]
+        public void ArchbishopGivesKnightCheck()
+        {
+            Assert.IsTrue(new Game("8/8/8/4k3/8/3A4/8/4K3 b - - 0 1").IsInCheck(PieceColor.Black));
+        }
+
+        [Test]
+        public void ArchbishopKnightJumpBlockedByWall()
+        {
+            // e2→d4 passes e3,e4: blocked by a wall on e3. Same jump without the wall works.
+            Assert.IsFalse(new Game("4k3/8/8/8/8/4W3/4A3/4K3 w - - 0 1").GetMovesFrom(S("e2")).Exists(m => m.To == S("d4")));
+            Assert.IsTrue(new Game("4k3/8/8/8/8/8/4A3/4K3 w - - 0 1").GetMovesFrom(S("e2")).Exists(m => m.To == S("d4")));
         }
 }
 }
