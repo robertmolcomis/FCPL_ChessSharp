@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Chess.Core
@@ -14,7 +15,7 @@ namespace Chess.Core
             int fwd = piece.Color.Forward();
             int start = output.Count;
 
-            foreach (var prim in piece.Definition.Moves)
+            foreach (var prim in piece.Moves)
             {
                 if ((prim.Flags & MoveFlags.FirstMoveOnly) != 0 && piece.HasMoved) continue;
 
@@ -23,6 +24,8 @@ namespace Chess.Core
                 int dx = prim.Dx, dy = prim.Dy * fwd;
                 int maxRange = prim.MaxRange <= 0 ? int.MaxValue : prim.MaxRange;
 
+                if (maxRange == 1 && LeapBlockedByWall(board, from, dx, dy)) continue;
+
                 var sq = from;
                 for (int step = 1; step <= maxRange; step++)
                 {
@@ -30,6 +33,22 @@ namespace Chess.Core
                     if (!board.IsValid(sq)) break; // off-board and holes stop movement
 
                     var target = board[sq];
+                    var wall = board.WallAt(sq);
+                    if (wall != null)
+                    {
+                        // Nothing goes over a wall: every case below ends this ray.
+                        if (board.OccupantAt(sq) == null && wall.Color == piece.Color)
+                        {
+                            if (!captureOnly) Add(game, from, sq, piece, MoveKind.Normal, default, output, start); // climb own wall
+                        }
+                        else if (target.Color != piece.Color && !moveOnly)
+                        {
+                            if (board.OccupantAt(sq) != null) AddBounce(from, sq, output, start); // destroys the wall only
+                            else Add(game, from, sq, piece, MoveKind.Normal, default, output, start); // empty enemy wall
+                        }
+                        break;
+                    }
+
                     if (target == null)
                     {
                         if (!captureOnly)
@@ -39,7 +58,7 @@ namespace Chess.Core
                                 kind = MoveKind.DoubleStep;
                             Add(game, from, sq, piece, kind, default, output, start);
                         }
-                        else if (step == 1 && game.EnPassantSquare == sq &&
+                        else if (step == 1 && dx != 0 && game.EnPassantSquare == sq &&
                                  piece.Definition.Has(PieceAbilities.CapturesEnPassant))
                         {
                             var victim = board[game.EnPassantVictim];
@@ -99,6 +118,33 @@ namespace Chess.Core
             }
         }
 
+        /// <summary>
+        /// Leapers (range-1 jumps longer than one square, e.g. the knight) can't jump over a wall. The path is the
+        /// long leg walked from the origin: b1→c3 passes b2 and b3.
+        /// </summary>
+        public static bool LeapBlockedByWall(Board board, Square from, int dx, int dy)
+        {
+            int ax = Math.Abs(dx), ay = Math.Abs(dy);
+            if (Math.Max(ax, ay) < 2) return false; // one-square steps don't pass over anything
+            bool vertical = ay >= ax;
+            int len = vertical ? ay : ax, sx = Math.Sign(dx), sy = Math.Sign(dy);
+            for (int i = 1; i <= len; i++)
+            {
+                var p = vertical ? from.Offset(0, i * sy) : from.Offset(i * sx, 0);
+                if (p == from.Offset(dx, dy)) break; // destination itself isn't "over"
+                if (board.WallAt(p) != null) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Capture of a piece standing on a wall: no promotion choices, the mover doesn't actually move.</summary>
+        static void AddBounce(Square from, Square to, List<Move> output, int start)
+        {
+            for (int i = start; i < output.Count; i++)
+                if (output[i].To == to && output[i].Kind != MoveKind.Castle) return;
+            output.Add(new Move(from, to));
+        }
+
         static void Add(Game game, Square from, Square to, Piece piece, MoveKind kind, Square aux, List<Move> output, int start)
         {
             // de-duplicate (e.g. pawn single-step and double-step primitives both reach the next square)
@@ -140,7 +186,7 @@ namespace Chess.Core
             int tx = target.File - from.File, ty = target.Rank - from.Rank;
             if (tx == 0 && ty == 0) return false;
 
-            foreach (var prim in piece.Definition.Moves)
+            foreach (var prim in piece.Moves)
             {
                 if ((prim.Flags & MoveFlags.MoveOnly) != 0) continue;
                 if ((prim.Flags & MoveFlags.FirstMoveOnly) != 0 && piece.HasMoved) continue;
@@ -153,6 +199,7 @@ namespace Chess.Core
                 if (k < 1) continue;
                 int maxRange = prim.MaxRange <= 0 ? int.MaxValue : prim.MaxRange;
                 if (k > maxRange) continue;
+                if (maxRange == 1 && LeapBlockedByWall(board, from, dx, dy)) continue;
 
                 bool blocked = false;
                 var sq = from;

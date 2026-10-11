@@ -50,6 +50,8 @@ namespace Chess.Core
         CreatesEnPassant = 1 << 2,     // a 2-square straight move leaves an en-passant square (pawn)
         CapturesEnPassant = 1 << 3,    // capture-only steps may land on the en-passant square (pawn)
         ResetsFiftyMoveClock = 1 << 4, // moving it is irreversible (pawn)
+        Wall = 1 << 6,                 // immobile; blocks everything (even leapers); a friendly piece may stand on it
+        Berserks = 1 << 5,             // after BerserkCaptureThreshold captures, permanently gains BerserkMoves (pawn)
     }
 
     /// <summary>Data-only description of a piece type. No hardcoded "bishop moves diagonally" anywhere in the engine.</summary>
@@ -62,14 +64,23 @@ namespace Chess.Core
         public bool PromotesOnLastRank { get; }
         public PieceAbilities Abilities { get; }
         public IReadOnlyList<MovePrimitive> Moves { get; }
+        /// <summary>Full move set once berserk (Moves + extras). Same as Moves for pieces that can't go berserk.</summary>
+        public IReadOnlyList<MovePrimitive> BerserkMoves { get; }
+        /// <summary>Captures needed to go berserk (permanently).</summary>
+        public int BerserkCaptureThreshold { get; }
 
         public PieceDefinition(string id, string displayName, char symbol, IEnumerable<MovePrimitive> moves,
                                bool isRoyal = false, bool promotesOnLastRank = false,
-                               PieceAbilities abilities = PieceAbilities.None)
+                               PieceAbilities abilities = PieceAbilities.None,
+                               IEnumerable<MovePrimitive> berserkExtraMoves = null, int berserkCaptureThreshold = 2)
         {
             Abilities = abilities;
             Id = id; DisplayName = displayName; Symbol = char.ToUpperInvariant(symbol);
             Moves = new List<MovePrimitive>(moves);
+            var berserk = new List<MovePrimitive>(Moves);
+            if (berserkExtraMoves != null) berserk.AddRange(berserkExtraMoves);
+            BerserkMoves = berserk;
+            BerserkCaptureThreshold = berserkCaptureThreshold;
             IsRoyal = isRoyal; PromotesOnLastRank = promotesOnLastRank;
         }
 

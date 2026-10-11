@@ -18,10 +18,10 @@ namespace Chess.Core.Tests
         [TestCase(2, 400)]
         [TestCase(3, 8902)]
         [TestCase(4, 197281)]
-        public void StartPosition(int depth, long expected) => Assert.AreEqual(expected, new Game().Perft(depth));
+        public void StartPosition(int depth, long expected) => Assert.AreEqual(expected, new Game(Game.ClassicFen).Perft(depth));
 
         [Test, Explicit("Slow (~10-30 s in the editor)")]
-        public void StartPosition_Depth5() => Assert.AreEqual(4865609, new Game().Perft(5));
+        public void StartPosition_Depth5() => Assert.AreEqual(4865609, new Game(Game.ClassicFen).Perft(5));
 
         [TestCase(Kiwipete, 1, 48)]
         [TestCase(Kiwipete, 2, 2039)]
