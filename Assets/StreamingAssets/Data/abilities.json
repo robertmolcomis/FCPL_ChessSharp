@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "abilities": [
+    {
+      "id": "Castles", "category": "rule", "appliesTo": ["king"],
+      "displayName": "Castling",
+      "description": "Moves 2 squares toward an unmoved castling partner on the same rank; the partner jumps over it. Not out of, through or into check."
+    },
+    {
+      "id": "CastlePartner", "category": "rule", "appliesTo": ["rook"],
+      "displayName": "Castling partner",
+      "description": "The piece the king castles with."
+    },
+    {
+      "id": "CreatesEnPassant", "category": "rule", "appliesTo": ["pawn"],
+      "displayName": "Double step",
+      "description": "A 2-square straight move leaves an en-passant square behind."
+    },
+    {
+      "id": "CapturesEnPassant", "category": "rule", "appliesTo": ["pawn"],
+      "displayName": "En passant",
+      "description": "Can capture a pawn that just made a double step, as if it had moved only one square."
+    },
+    {
+      "id": "ResetsFiftyMoveClock", "category": "rule", "appliesTo": ["pawn"],
+      "displayName": "Irreversible move",
+      "description": "Moving this piece resets the 50-move counter."
+    },
+    {
+      "id": "Promotes", "category": "rule", "appliesTo": ["pawn"],
+      "displayName": "Promotion",
+      "description": "Reaching the last rank, it becomes one of the listed pieces.",
+      "params": { "choices": ["queen", "rook", "bishop", "knight"] }
+    },
+    {
+      "id": "Wall", "category": "rule", "appliesTo": ["wall"],
+      "displayName": "Wall",
+      "description": "Never moves; nothing passes over it. A piece standing on it loses the wall instead of being captured."
+    },
+    {
+      "id": "BerserkPawn", "category": "powerup", "appliesTo": ["pawn"],
+      "displayName": "Berserk",
+      "description": "After capturing 2 pieces, this pawn can also capture straight forward and straight backward.",
+      "params": {
+        "threshold": 2,
+        "mode": "replace",
+        "captures": [ { "dirs": [[-1, 1], [0, 1], [1, 1], [0, -1]] } ]
+      }
+    }
+  ]
+}

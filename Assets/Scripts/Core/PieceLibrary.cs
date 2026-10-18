@@ -1,51 +1,54 @@
+using System;
 using System.Collections.Generic;
 
 namespace Chess.Core
 {
-    /// <summary>The standard set (+ a couple of fairy pieces to prove the data-driven approach).</summary>
+    /// <summary>
+    /// The active set of piece and ability definitions, loaded at startup from pieces.json + abilities.json.
+    /// Read-only once installed. Install with <see cref="LoadFromJson"/> (or <see cref="Install"/>) before creating a Game.
+    /// </summary>
     public static class PieceLibrary
     {
-        public static readonly PieceDefinition Pawn = new PieceDefinition("pawn", "Pawn", 'P', new[]
+        static RulesData _data;
+
+        public static bool IsLoaded => _data != null;
+
+        /// <summary>The installed rules (also holds the raw JSON, for save-file snapshots).</summary>
+        public static RulesData Data => _data ?? throw NotLoaded();
+
+        /// <summary>Parses, validates and installs the rules. Throws <see cref="RulesDataException"/> on bad data.</summary>
+        public static RulesData LoadFromJson(string piecesJson, string abilitiesJson)
         {
-            new MovePrimitive(0, 1, 1, MoveFlags.MoveOnly),
-            new MovePrimitive(0, 1, 2, MoveFlags.MoveOnly | MoveFlags.FirstMoveOnly),
-            new MovePrimitive(1, 1, 1, MoveFlags.CaptureOnly),
-            new MovePrimitive(-1, 1, 1, MoveFlags.CaptureOnly),
-        }, promotesOnLastRank: true,
-           abilities: PieceAbilities.CreatesEnPassant | PieceAbilities.CapturesEnPassant | PieceAbilities.ResetsFiftyMoveClock
-                    | PieceAbilities.Berserks,
-           // Berserk (after 2 captures, permanent): may also capture straight ahead and straight behind.
-           berserkExtraMoves: new[]
-           {
-               new MovePrimitive(0, 1, 1, MoveFlags.CaptureOnly),
-               new MovePrimitive(0, -1, 1, MoveFlags.CaptureOnly),
-           },
-           berserkCaptureThreshold: 2);
+            var data = RulesDataLoader.Load(piecesJson, abilitiesJson);
+            Install(data);
+            return data;
+        }
 
-        public static readonly PieceDefinition Knight = new PieceDefinition("knight", "Knight", 'N', Patterns.Leaper(1, 2));
-        public static readonly PieceDefinition Bishop = new PieceDefinition("bishop", "Bishop", 'B', Patterns.Bishop());
-        public static readonly PieceDefinition Rook = new PieceDefinition("rook", "Rook", 'R', Patterns.Rook(), abilities: PieceAbilities.CastlePartner);
-        public static readonly PieceDefinition Queen = new PieceDefinition("queen", "Queen", 'Q', Patterns.Concat(Patterns.Rook(), Patterns.Bishop()));
-        public static readonly PieceDefinition King = new PieceDefinition("king", "King", 'K', Patterns.Concat(Patterns.Rook(1), Patterns.Bishop(1)), isRoyal: true, abilities: PieceAbilities.Castles);
+        public static void Install(RulesData data) => _data = data ?? throw new ArgumentNullException(nameof(data));
 
-        // Fairy pieces (M3) — already free thanks to the data-driven design.
-        public static readonly PieceDefinition Archbishop = new PieceDefinition("archbishop", "Archbishop", 'A', Patterns.Concat(Patterns.Bishop(), Patterns.Leaper(1, 2)));
-        public static readonly PieceDefinition Chancellor = new PieceDefinition("chancellor", "Chancellor", 'C', Patterns.Concat(Patterns.Rook(), Patterns.Leaper(1, 2)));
+        /// <summary>Piece type by its pieces.json name, or null if there is none.</summary>
+        public static PieceDefinition Get(string name) =>
+            Data.PiecesByName.TryGetValue(name, out var def) ? def : null;
 
-        /// <summary>
-        /// Wall: never moves, nothing passes over it (knights included). A friendly piece may stand on it; capturing that
-        /// piece destroys the wall instead and the attacker stays where it was. An empty wall is captured like a piece.
-        /// </summary>
-        public static readonly PieceDefinition Wall = new PieceDefinition("wall", "Wall", 'W', new MovePrimitive[0],
-            abilities: PieceAbilities.Wall);
+        public static IReadOnlyDictionary<char, PieceDefinition> BySymbol => Data.PiecesBySymbol;
+        public static IReadOnlyDictionary<string, PieceDefinition> ByName => Data.PiecesByName;
+        public static IReadOnlyDictionary<string, AbilityInfo> Abilities => Data.Abilities;
 
-        /// <summary>What a pawn may promote to, in picker order.</summary>
-        public static readonly char[] PromotionChoices = { 'Q', 'R', 'B', 'N' };
+        /// <summary>What a promoting piece may become, in picker order (from the "Promotes" ability's params).</summary>
+        public static IReadOnlyList<char> PromotionChoices => Data.PromotionChoices;
 
-        public static readonly IReadOnlyDictionary<char, PieceDefinition> BySymbol = new Dictionary<char, PieceDefinition>
-        {
-            ['P'] = Pawn, ['N'] = Knight, ['B'] = Bishop, ['R'] = Rook, ['Q'] = Queen, ['K'] = King,
-            ['A'] = Archbishop, ['C'] = Chancellor, ['W'] = Wall,
-        };
+        // Shortcuts for the standard set (null if the data doesn't define them).
+        public static PieceDefinition Pawn => Get("pawn");
+        public static PieceDefinition Knight => Get("knight");
+        public static PieceDefinition Bishop => Get("bishop");
+        public static PieceDefinition Rook => Get("rook");
+        public static PieceDefinition Queen => Get("queen");
+        public static PieceDefinition King => Get("king");
+        public static PieceDefinition Archbishop => Get("archbishop");
+        public static PieceDefinition Chancellor => Get("chancellor");
+        public static PieceDefinition Wall => Get("wall");
+
+        static InvalidOperationException NotLoaded() => new InvalidOperationException(
+            "Piece data not loaded. Call PieceLibrary.LoadFromJson(pieces.json, abilities.json) at startup.");
     }
 }

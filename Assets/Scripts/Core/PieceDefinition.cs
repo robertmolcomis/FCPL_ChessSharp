@@ -54,17 +54,26 @@ namespace Chess.Core
         Berserks = 1 << 5,             // after BerserkCaptureThreshold captures, permanently gains BerserkMoves (pawn)
     }
 
-    /// <summary>Data-only description of a piece type. No hardcoded "bishop moves diagonally" anywhere in the engine.</summary>
+    /// <summary>
+    /// Data-only description of a piece type, built from pieces.json by <see cref="RulesDataLoader"/>.
+    /// No hardcoded "bishop moves diagonally" anywhere in the engine.
+    /// </summary>
     public sealed class PieceDefinition
     {
+        /// <summary>The piece's "name" in pieces.json (e.g. "pawn").</summary>
         public string Id { get; }
         public string DisplayName { get; }
         public char Symbol { get; }           // FEN-style letter, uppercase
         public bool IsRoyal { get; }
         public bool PromotesOnLastRank { get; }
         public PieceAbilities Abilities { get; }
+        /// <summary>The "flags" of pieces.json: ability ids, in file order.</summary>
+        public IReadOnlyList<string> AbilityIds { get; }
+        /// <summary>
+        /// Move primitives: entries from "moves" are MoveOnly, from "captures" CaptureOnly; with captures "same" they do both.
+        /// </summary>
         public IReadOnlyList<MovePrimitive> Moves { get; }
-        /// <summary>Full move set once berserk (Moves + extras). Same as Moves for pieces that can't go berserk.</summary>
+        /// <summary>Full move set once berserk. Same as Moves for pieces that can't go berserk.</summary>
         public IReadOnlyList<MovePrimitive> BerserkMoves { get; }
         /// <summary>Captures needed to go berserk (permanently).</summary>
         public int BerserkCaptureThreshold { get; }
@@ -72,45 +81,19 @@ namespace Chess.Core
         public PieceDefinition(string id, string displayName, char symbol, IEnumerable<MovePrimitive> moves,
                                bool isRoyal = false, bool promotesOnLastRank = false,
                                PieceAbilities abilities = PieceAbilities.None,
-                               IEnumerable<MovePrimitive> berserkExtraMoves = null, int berserkCaptureThreshold = 2)
+                               IEnumerable<MovePrimitive> berserkMoves = null, int berserkCaptureThreshold = 0,
+                               IEnumerable<string> abilityIds = null)
         {
             Abilities = abilities;
             Id = id; DisplayName = displayName; Symbol = char.ToUpperInvariant(symbol);
             Moves = new List<MovePrimitive>(moves);
-            var berserk = new List<MovePrimitive>(Moves);
-            if (berserkExtraMoves != null) berserk.AddRange(berserkExtraMoves);
-            BerserkMoves = berserk;
+            BerserkMoves = berserkMoves != null ? new List<MovePrimitive>(berserkMoves) : Moves;
             BerserkCaptureThreshold = berserkCaptureThreshold;
+            AbilityIds = abilityIds != null ? new List<string>(abilityIds) : new List<string>();
             IsRoyal = isRoyal; PromotesOnLastRank = promotesOnLastRank;
         }
 
         public bool Has(PieceAbilities a) => (Abilities & a) == a;
         public override string ToString() => DisplayName;
-    }
-
-    /// <summary>Builders for the common Betza-style building blocks.</summary>
-    public static class Patterns
-    {
-        static readonly (int, int)[] Orthogonal = { (1, 0), (-1, 0), (0, 1), (0, -1) };
-        static readonly (int, int)[] Diagonal = { (1, 1), (1, -1), (-1, 1), (-1, -1) };
-
-        public static IEnumerable<MovePrimitive> Rook(int range = 0) { foreach (var (x, y) in Orthogonal) yield return new MovePrimitive(x, y, range); }
-        public static IEnumerable<MovePrimitive> Bishop(int range = 0) { foreach (var (x, y) in Diagonal) yield return new MovePrimitive(x, y, range); }
-
-        /// <summary>All 8 symmetric (a,b) leaps, e.g. (1,2) = knight, (1,3) = camel. range 0 = rider.</summary>
-        public static IEnumerable<MovePrimitive> Leaper(int a, int b, int range = 1)
-        {
-            var seen = new HashSet<(int, int)>();
-            foreach (var (x, y) in new[] { (a, b), (b, a) })
-                foreach (var sx in new[] { 1, -1 })
-                    foreach (var sy in new[] { 1, -1 })
-                        if (seen.Add((x * sx, y * sy)))
-                            yield return new MovePrimitive(x * sx, y * sy, range);
-        }
-
-        public static IEnumerable<MovePrimitive> Concat(params IEnumerable<MovePrimitive>[] parts)
-        {
-            foreach (var p in parts) foreach (var m in p) yield return m;
-        }
     }
 }

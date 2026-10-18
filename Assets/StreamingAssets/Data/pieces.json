@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "pieces": [
+    {
+      "name": "pawn", "displayName": "Pawn", "symbol": "P",
+      "moves": [
+        { "dirs": [[0, 1]] },
+        { "dirs": [[0, 1]], "maxSteps": 2, "condition": "firstMove" }
+      ],
+      "captures": [
+        { "dirs": [[1, 1], [-1, 1]] }
+      ],
+      "flags": ["CreatesEnPassant", "CapturesEnPassant", "ResetsFiftyMoveClock", "Promotes", "BerserkPawn"]
+    },
+    {
+      "name": "knight", "displayName": "Knight", "symbol": "N",
+      "moves": [
+        { "dirs": [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]] }
+      ],
+      "captures": "same",
+      "flags": []
+    },
+    {
+      "name": "bishop", "displayName": "Bishop", "symbol": "B",
+      "moves": [
+        { "dirs": [[1, 1], [1, -1], [-1, 1], [-1, -1]], "slide": true }
+      ],
+      "captures": "same",
+      "flags": []
+    },
+    {
+      "name": "rook", "displayName": "Rook", "symbol": "R",
+      "moves": [
+        { "dirs": [[1, 0], [-1, 0], [0, 1], [0, -1]], "slide": true }
+      ],
+      "captures": "same",
+      "flags": ["CastlePartner"]
+    },
+    {
+      "name": "queen", "displayName": "Queen", "symbol": "Q",
+      "moves": [
+        { "dirs": [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]], "slide": true }
+      ],
+      "captures": "same",
+      "flags": []
+    },
+    {
+      "name": "king", "displayName": "King", "symbol": "K", "royal": true,
+      "moves": [
+        { "dirs": [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] }
+      ],
+      "captures": "same",
+      "flags": ["Castles"]
+    },
+    {
+      "name": "archbishop", "displayName": "Archbishop", "symbol": "A",
+      "moves": [
+        { "dirs": [[1, 1], [1, -1], [-1, 1], [-1, -1]], "slide": true },
+        { "dirs": [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]] }
+      ],
+      "captures": "same",
+      "flags": []
+    },
+    {
+      "name": "chancellor", "displayName": "Chancellor", "symbol": "C",
+      "moves": [
+        { "dirs": [[1, 0], [-1, 0], [0, 1], [0, -1]], "slide": true },
+        { "dirs": [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]] }
+      ],
+      "captures": "same",
+      "flags": []
+    },
+    {
+      "name": "wall", "displayName": "Wall", "symbol": "W",
+      "moves": [],
+      "captures": [],
+      "flags": ["Wall"]
+    }
+  ]
+}

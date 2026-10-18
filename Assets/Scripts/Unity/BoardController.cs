@@ -63,6 +63,9 @@ namespace Chess.Unity
 
         void Start()
         {
+            // Piece and ability definitions come from StreamingAssets/Data/*.json.
+            if (!RulesBootstrap.Load()) { enabled = false; return; }
+
             _cam = Camera.main;
 
             // Unlit sprites, so nothing depends on 2D lights in the scene.
