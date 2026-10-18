@@ -2,6 +2,7 @@
 
 > Purpose of this file: a single source of truth to give an AI assistant (or a new collaborator) full context on the project.
 > Sections marked **DECIDED** are settled. Sections marked **OPEN** still need a decision.
+> Detailed design for the next batch of features (check highlight, JSON data, boards, save/replay, menu) is in **`FEATURES_PLAN.md`**.
 
 ---
 
@@ -42,8 +43,9 @@ Implementation: standard Unity 2D setup — orthographic camera, `SpriteRenderer
 3. **Data-driven piece movement** — no hardcoded "bishop moves diagonally". Pieces are composed from movement primitives:
    - **Slide** in a direction (optional max range) — rook, bishop, queen.
    - **Leap** by an offset — knight, king.
-   - **Flags** — move-only, capture-only, first-move-only (pawns), etc.
-   - Piece definitions as ScriptableObjects (or equivalent data). Inspired by fairy-chess / Betza notation. Fairy pieces (Archbishop = B+N, Chancellor = R+N, Amazon = Q+N, Camel = (3,1) leaper, Nightrider = repeated knight) become nearly free.
+   - **Separate `moves` and `captures` patterns** per piece (`captures` can be `"same"`). Only the pawn differs today, but the model stays general.
+   - **Flags** — a list of ability ids (e.g. `CreatesEnPassant`, `Promotes`, `BerserkPawn`); first-move-only etc. are conditions on a pattern.
+   - Piece definitions are loaded at startup from **`pieces.json`**; ability definitions and parameters from **`abilities.json`** (see `FEATURES_PLAN.md` §2). Inspired by fairy-chess / Betza notation. Fairy pieces (Archbishop = B+N, Chancellor = R+N, Amazon = Q+N, Camel = (3,1) leaper, Nightrider = repeated knight) become nearly free.
 4. **Board representation** — simple array (no bitboards; they don't fit custom pieces well). Use a **width × height grid + a mask of valid squares** instead of a hard-coded 8×8, so alternative board shapes (§7.4) come for free. Standard chess = 8×8 with every square valid.
    - **Per-piece state:** each piece instance carries its own data — type, owner, capture counter (berserk pawn), list of modifiers, "standing on a wall" flag. The Zobrist hash must include all of it.
 5. **Legal moves are generic** — generate pseudo-legal moves → simulate each → reject if own royal piece ends up attacked. No special-case pin logic. Required for power-ups to interact correctly with check.
@@ -89,7 +91,7 @@ Visually distinct types:
 - Quiet move target (small dot)
 - Capture target (ring / corner markers; enemy piece stays visible)
 - **Last move** (from + to squares, subtle tint) — recommended in M1 for hotseat readability
-- *(M2)* King in check
+- *(M2)* King in check — plus the **square(s) of the checking piece(s)** (see `FEATURES_PLAN.md` §1)
 
 ---
 
@@ -138,11 +140,11 @@ Suggested split:
 1. **In-match active abilities (consumables)?** If yes: does using one consume the turn? Can it escape check? (Checkmate then = no legal moves **and** no legal ability uses.)
 2. **Can the king be upgraded / replaced?** (Engine uses a "royal" flag either way.)
 3. **PvP shop economy:** equal budgets? Blind or alternating picks? Is the opponent's loadout visible before the match?
-4. **Random effects?** If yes, seeded RNG in the engine.
+4. ~~**Random effects?**~~ **DECIDED:** yes (e.g. random holes in the board) — always through the seeded RNG in the engine; the seed is stored in the match file.
 
 ### 7.4 Planned mechanics — ideas (list will grow)
 
-1. **Berserk pawn** — when a pawn has captured **2 pieces**, it goes berserk and its capture pattern widens (tracked **per pawn**). Capture pattern (P = pawn, x = can capture, White's perspective, forward = up):
+1. **Berserk pawn** (ability id `BerserkPawn`, pawns only; threshold and pattern come from `abilities.json`, default threshold 2) — when a pawn has captured **2 pieces**, it goes berserk and its capture pattern widens (tracked **per pawn**). Capture pattern (P = pawn, x = can capture, White's perspective, forward = up):
    ```
    x x x
    _ P _
@@ -153,25 +155,27 @@ Suggested split:
    - Any piece can move **on top of** a wall; the wall then acts as an **extra life**.
    - If a piece standing on a wall is captured, the **wall is destroyed instead**, and the attacking piece **returns to the square it came from** (the attack costs the attacker its turn).
    - Knights **cannot jump over** walls.
+   - Full rules: see §7.5 (decided).
 3. **Archbishop** — new piece, moves as Bishop + Knight.
 4. **Different board shapes** for some levels deep in a rogue-like run, e.g. a plus shape, or a normal board with the centre missing. (Engine: valid-square mask, §4.4.)
 5. **Modifiers for standard pieces** — e.g. the King can move 2 squares in a straight line.
 6. **Drawbacks on modifiers** — e.g. the King moves *only* 2 squares in a straight line, losing its 1-square straight move. (Data-driven: a modifier simply replaces/removes movement primitives.)
 7. *More to come.*
 
-### 7.5 OPEN questions about the new mechanics
+### 7.5 Rules for the new mechanics — DECIDED
 
 **Wall**
-1. Can a wall move on its own, or is it stationary?
-2. Can sliders pass *through* an empty wall square, or must they stop on it? Can an empty wall be captured / destroyed?
-3. Knight blocking: a knight has two possible "paths" (2 straight then 1 sideways, or 1 then 2). Is it blocked if a wall is on **either** path, or only if **both** are blocked?
-4. King on a wall that is attacked — **is that check?** (Decides how checkmate works.)
-5. When a piece leaves a wall, does the wall stay on its square (reusable by other pieces)?
-6. Can a piece on a wall be captured by en passant or other special captures?
+1. Walls are **stationary** (never move on their own).
+2. **Nobody passes through a wall.** If a piece's trajectory meets a wall, the piece **stops on the wall**. An empty wall **can be captured** (destroyed).
+3. A **knight's path is blocked where the wall is** — a wall on its path stops the jump; nothing more.
+4. A **king standing on a wall is not in check** when attacked.
+5. Walls are **reusable**: when a piece leaves a wall, the wall stays on its square for other pieces.
+6. **En passant** against a pawn that ended its double step on a wall **breaks that wall** (normal wall rule: the wall is destroyed instead of the pawn).
 
 **Berserk pawn**
-1. Does a berserk pawn keep its normal moves (forward 1 / 2 on first move) and promotion?
-2. Does the counter reset on promotion? Does a captured-wall "hit" count as a capture?
+1. A berserk pawn keeps its normal moves and promotion; berserk only changes its `captures`.
+2. Berserk is **pawn-only** and is **lost on promotion** (the counter goes with it).
+3. **Breaking a wall counts as a capture** for the berserk counter.
 
 ---
 
@@ -233,3 +237,9 @@ Implementation notes:
 | Undo | Allowed any time in local PvP; after resign / agreed draw it just reopens the game |
 | HUD | Temporary IMGUI bar (status, Undo, Offer draw, Resign, New game) until a proper UI pass |
 | Castling / en passant | Generic piece abilities (`Castles`, `CastlePartner`, `CreatesEnPassant`, …), not hardcoded to king/rook/pawn |
+| Piece / ability data | Loaded at startup from `pieces.json` + `abilities.json` (Newtonsoft JSON), not ScriptableObjects |
+| Check detection | Uses only pieces' `captures` patterns; UI highlights king + checking piece(s) |
+| Ability parameters | Global, defined only in `abilities.json`; no per-piece overrides |
+| Save files | Match file (rules snapshot + setup + seed + event list) + snapshot file for Continue |
+| Classic mode | Standard chess |
+| Wall / berserk rules | See §7.5 |

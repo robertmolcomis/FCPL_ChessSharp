@@ -329,5 +329,38 @@ namespace Chess.Core.Tests
             Assert.IsFalse(new Game("4k3/8/8/8/8/4W3/4A3/4K3 w - - 0 1").GetMovesFrom(S("e2")).Exists(m => m.To == S("d4")));
             Assert.IsTrue(new Game("4k3/8/8/8/8/8/4A3/4K3 w - - 0 1").GetMovesFrom(S("e2")).Exists(m => m.To == S("d4")));
         }
+
+        // ───────── Check signal: pieces giving check ─────────
+
+        [Test]
+        public void CheckingPiecesSingleCheck()
+        {
+            var g = new Game("4k3/8/8/8/8/8/8/R3K2r w - - 0 1"); // black rook h1 checks e1
+            CollectionAssert.AreEquivalent(new[] { S("h1") }, g.CheckingPieces(PieceColor.White));
+        }
+
+        [Test]
+        public void CheckingPiecesEmptyWhenNotInCheck()
+        {
+            Assert.IsEmpty(new Game(Game.ClassicFen).CheckingPieces(PieceColor.White));
+        }
+
+        [Test]
+        public void CheckingPiecesDoubleAndDiscoveredCheck()
+        {
+            // The knight on e3 blocks the rook on e8; moving it to g2 checks e1 and uncovers the rook.
+            var g = new Game("4r1k1/8/8/8/8/4n3/8/4K3 b - - 0 1");
+            Play(g, "e3g2");
+            CollectionAssert.AreEquivalent(new[] { S("g2"), S("e8") }, g.CheckingPieces(PieceColor.White));
+        }
+
+        [Test]
+        public void CheckingPiecesUseCapturePatternNotMoves()
+        {
+            // A pawn straight in front of the king doesn't check; a diagonal one does.
+            Assert.IsEmpty(new Game("8/8/8/8/8/4p3/4K3/7k w - - 0 1").CheckingPieces(PieceColor.White));
+            CollectionAssert.AreEquivalent(new[] { S("d3") },
+                new Game("8/8/8/8/8/3p4/4K3/7k w - - 0 1").CheckingPieces(PieceColor.White));
+        }
 }
 }

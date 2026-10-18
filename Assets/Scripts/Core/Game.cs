@@ -94,6 +94,18 @@ namespace Chess.Core
             return list;
         }
 
+        /// <summary>
+        /// Squares of the pieces currently giving check to <paramref name="color"/>'s royal piece(s)
+        /// (for the check highlight). Two entries on a double check; empty when not in check.
+        /// </summary>
+        public List<Square> CheckingPieces(PieceColor color)
+        {
+            var list = new List<Square>();
+            foreach (var royal in RoyalsInCheck(color))
+                MoveGenerator.AttackersOf(Board, royal, color.Opponent(), list);
+            return list;
+        }
+
         /// <summary>True if the side to move has a legal en-passant capture (used by the position hash).</summary>
         public bool HasEnPassantCapture()
         {

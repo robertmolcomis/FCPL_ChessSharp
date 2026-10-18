@@ -29,6 +29,8 @@ namespace Chess.Unity
         [SerializeField] Color moveDotColor = new Color(0.10f, 0.10f, 0.10f, 0.30f);
         [SerializeField] Color captureColor = new Color(0.85f, 0.15f, 0.15f, 0.60f);
         [SerializeField] Color checkColor = new Color(1.00f, 0.10f, 0.10f, 0.75f);
+        [Tooltip("Square tint of the king in check and of the piece(s) giving check.")]
+        [SerializeField] Color checkSquareColor = new Color(0.90f, 0.10f, 0.10f, 0.60f);
         [SerializeField] Color background = new Color(0.16f, 0.17f, 0.20f);
 
         [Header("Pieces")]
@@ -450,7 +452,12 @@ namespace Chess.Unity
             }
 
             foreach (var royal in _game.RoyalsInCheck(_game.SideToMove))
+            {
+                AddHighlight(royal, SpriteFactory.Square, checkSquareColor, 1f, OrderCheck);
                 AddHighlight(royal, SpriteFactory.Glow, checkColor, 1f, OrderCheck);
+            }
+            foreach (var checker in _game.CheckingPieces(_game.SideToMove))
+                AddHighlight(checker, SpriteFactory.Square, checkSquareColor, 1f, OrderCheck);
 
             if (_state == InputState.PieceSelected || _state == InputState.PromotionPick)
             {

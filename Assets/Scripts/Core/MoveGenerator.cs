@@ -179,6 +179,23 @@ namespace Chess.Core
             return false;
         }
 
+        /// <summary>
+        /// Adds to <paramref name="output"/> the square of every piece of <paramref name="by"/> that attacks
+        /// <paramref name="target"/> (uses capture patterns only — same test as <see cref="IsAttacked"/>).
+        /// Covers double and discovered check since the whole board is scanned.
+        /// </summary>
+        public static void AttackersOf(Board board, Square target, PieceColor by, List<Square> output)
+        {
+            for (int x = 0; x < board.Width; x++)
+                for (int y = 0; y < board.Height; y++)
+                {
+                    var from = new Square(x, y);
+                    var p = board[from];
+                    if (p == null || p.Color != by) continue;
+                    if (Attacks(board, from, p, target) && !output.Contains(from)) output.Add(from);
+                }
+        }
+
         /// <summary>Could the piece on <paramref name="from"/> capture on <paramref name="target"/> (ignoring what is there)?</summary>
         public static bool Attacks(Board board, Square from, Piece piece, Square target)
         {
