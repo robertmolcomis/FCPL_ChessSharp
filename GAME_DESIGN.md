@@ -175,7 +175,7 @@ Suggested split:
 **Berserk pawn**
 1. A berserk pawn keeps its normal moves and promotion; berserk only changes its `captures`.
 2. Berserk is **pawn-only** and is **lost on promotion** (the counter goes with it).
-3. **Breaking a wall counts as a capture** for the berserk counter.
+3. **Breaking a wall does not count as a capture** for the berserk counter.
 
 ---
 

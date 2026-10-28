@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Chess.Core
 {
@@ -44,6 +45,7 @@ namespace Chess.Core
         public Piece Captured { get; }
         public Square CapturedSquare { get; }
         public PieceDefinition DefinitionBefore { get; }
+        /// <summary>The mover changed type (promotion, or transformation right after the move).</summary>
         public bool Promoted => Mover.Definition != DefinitionBefore;
         public bool GaveCheck { get; internal set; }
         /// <summary>
@@ -57,6 +59,19 @@ namespace Chess.Core
         internal Square? PrevEnPassant { get; }
         internal Square PrevEnPassantVictim { get; }
         internal int PrevHalfmoveClock { get; }
+        // move streaks: the side's previously streaking piece, its streak, and the mover's streak before this move
+        internal Piece PrevStreakPiece { get; set; }
+        internal int PrevStreakPieceStreak { get; set; }
+        internal int PrevMoverStreak { get; set; }
+        /// <summary>Permanent conditions first reached by this move (undone in reverse).</summary>
+        internal List<(Piece piece, Condition condition)> Latched { get; set; }
+
+        /// <summary>
+        /// Pieces that changed type through a TransformsInto ability after this move (e.g. knight → paladin),
+        /// with the type each had before. Empty when nothing transformed. Promotion is not listed here.
+        /// </summary>
+        public IReadOnlyList<(Piece piece, PieceDefinition before)> Transformations => (IReadOnlyList<(Piece, PieceDefinition)>)_transformations ?? Array.Empty<(Piece, PieceDefinition)>();
+        internal List<(Piece piece, PieceDefinition before)> _transformations;
         /// <summary>The rook (or other partner) that moved with a castling move.</summary>
         public Piece CastlePartner { get; }
 

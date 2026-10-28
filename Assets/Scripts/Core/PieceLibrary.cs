@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Chess.Core
 {
     /// <summary>
-    /// The active set of piece and ability definitions, loaded at startup from pieces.json + abilities.json.
+    /// The active set of piece, ability and condition definitions, loaded at startup from pieces.json + abilities.json + conditions.json.
     /// Read-only once installed. Install with <see cref="LoadFromJson"/> (or <see cref="Install"/>) before creating a Game.
     /// </summary>
     public static class PieceLibrary
@@ -16,10 +16,13 @@ namespace Chess.Core
         /// <summary>The installed rules (also holds the raw JSON, for save-file snapshots).</summary>
         public static RulesData Data => _data ?? throw NotLoaded();
 
-        /// <summary>Parses, validates and installs the rules. Throws <see cref="RulesDataException"/> on bad data.</summary>
-        public static RulesData LoadFromJson(string piecesJson, string abilitiesJson)
+        /// <summary>
+        /// Parses, validates and installs the rules. Throws <see cref="RulesDataException"/> on bad data.
+        /// <paramref name="includePowerUps"/> = false leaves out every "powerup" ability (Classic).
+        /// </summary>
+        public static RulesData LoadFromJson(string piecesJson, string abilitiesJson, string conditionsJson, bool includePowerUps = true)
         {
-            var data = RulesDataLoader.Load(piecesJson, abilitiesJson);
+            var data = RulesDataLoader.Load(piecesJson, abilitiesJson, conditionsJson, includePowerUps);
             Install(data);
             return data;
         }
@@ -33,6 +36,7 @@ namespace Chess.Core
         public static IReadOnlyDictionary<char, PieceDefinition> BySymbol => Data.PiecesBySymbol;
         public static IReadOnlyDictionary<string, PieceDefinition> ByName => Data.PiecesByName;
         public static IReadOnlyDictionary<string, AbilityInfo> Abilities => Data.Abilities;
+        public static IReadOnlyDictionary<string, Condition> Conditions => Data.Conditions;
 
         /// <summary>What a promoting piece may become, in picker order (from the "Promotes" ability's params).</summary>
         public static IReadOnlyList<char> PromotionChoices => Data.PromotionChoices;
@@ -49,6 +53,6 @@ namespace Chess.Core
         public static PieceDefinition Wall => Get("wall");
 
         static InvalidOperationException NotLoaded() => new InvalidOperationException(
-            "Piece data not loaded. Call PieceLibrary.LoadFromJson(pieces.json, abilities.json) at startup.");
+            "Piece data not loaded. Call PieceLibrary.LoadFromJson(pieces.json, abilities.json, conditions.json) at startup.");
     }
 }

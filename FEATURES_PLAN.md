@@ -73,8 +73,13 @@ Both files are loaded **once at startup** into read-only registries. Parsed with
 ### 2.3 Engine side
 
 - Each piece on the board is an **instance** that points to its definition and carries its own state: owner, position, `hasMoved`, capture counter, abilities gained during the match.
-- The **behavior** of each ability is a C# class (e.g. `BerserkPawnAbility`) that reads its `params`. A registry maps ability id → class.
-- Abilities act through hooks: `ModifyMoves`, `ModifyCaptures`, `OnAfterCapture`, `OnTurnStart`, …
+- The **behavior** of each ability is a C# class (e.g. `BerserkPawnAbility`) that subclasses `Ability` and reads its `params` in `Configure`. `AbilityRegistry` maps ability id → class; one shared instance per id (parameters are global).
+- Data lives in `Assets/StreamingAssets/Data/`; `RulesBootstrap` (Unity) loads it at startup, `RulesDataLoader` (engine) parses and validates it.
+- Hooks implemented so far (more are added when a power-up needs them, e.g. `OnTurnStart`):
+  - `BuildActiveMoves` + `IsActive` — the move set a piece type gets while the ability is active (berserk);
+  - `GenerateExtraMoves` — extra moves (castling);
+  - `StateHash` — per-piece state in the position hash.
+- Marker abilities (`CastlePartner`, `CreatesEnPassant`, `CapturesEnPassant`, `ResetsFiftyMoveClock`, `Wall`) have no hooks; the engine checks for them by id.
 - Movement rules:
   - `moves` only target **empty** squares.
   - `captures` only target squares with an **enemy** piece.
@@ -83,7 +88,7 @@ Both files are loaded **once at startup** into read-only registries. Parsed with
 
 ### 2.4 Berserk pawn
 
-- Per-pawn capture counter, increased in `OnAfterCapture`. **Breaking a wall counts as a capture.**
+- Per-pawn capture counter (`Piece.CaptureCount`, kept by the engine so undo stays exact). **Breaking a wall does not count as a capture** (neither an empty wall nor the wall under a piece).
 - At the threshold, the capture pattern is replaced by: forward-left, forward, forward-right, back.
 - Keeps its normal moves and promotion. **Pawn-only; lost on promotion.**
 - Check detection picks up the new pattern automatically (it reads `captures` from the instance).
@@ -94,6 +99,11 @@ Both files are loaded **once at startup** into read-only registries. Parsed with
 - An ability on a piece its `appliesTo` doesn't allow.
 - An ability id with no C# class.
 - Missing or wrong-type `params`.
+
+### 2.6 Classic
+
+- Classic loads only `rule` abilities: every `powerup` ability stays defined (for the shop / tooltips) but is given to no piece.
+- For now: the **Classic Mode** checkbox on `BoardController` (classic start position + rules only). The menu (§5) will replace it.
 
 ## 3. Board types — DECIDED
 

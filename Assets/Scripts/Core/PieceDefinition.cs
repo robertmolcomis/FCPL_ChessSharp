@@ -18,7 +18,6 @@ namespace Chess.Core
         None = 0,
         MoveOnly = 1 << 0,      // can't capture with this primitive (pawn push)
         CaptureOnly = 1 << 1,   // only captures (pawn diagonal)
-        FirstMoveOnly = 1 << 2, // only if the piece hasn't moved yet (pawn double step)
     }
 
     /// <summary>
@@ -26,6 +25,7 @@ namespace Chess.Core
     /// it is mirrored automatically for Black.
     /// MaxRange = 1 is a leap/step (knight, king), 0 = unlimited slide (rook, bishop, nightrider...).
     /// Steps of range 1 are never blocked by intermediate squares (the knight "jumps").
+    /// <see cref="Condition"/> (from the pattern's "condition") limits when it can be used, e.g. the pawn double step.
     /// </summary>
     public readonly struct MovePrimitive
     {
@@ -33,30 +33,22 @@ namespace Chess.Core
         public readonly int Dy;
         public readonly int MaxRange;
         public readonly MoveFlags Flags;
+        /// <summary>Only usable while this holds (null = always).</summary>
+        public readonly Condition Condition;
 
-        public MovePrimitive(int dx, int dy, int maxRange, MoveFlags flags = MoveFlags.None)
+        public MovePrimitive(int dx, int dy, int maxRange, MoveFlags flags = MoveFlags.None, Condition condition = null)
         {
-            Dx = dx; Dy = dy; MaxRange = maxRange; Flags = flags;
+            Dx = dx; Dy = dy; MaxRange = maxRange; Flags = flags; Condition = condition;
         }
-    }
 
-    /// <summary>Special-rule abilities. Kept as data so fairy pieces / power-ups can opt in or out.</summary>
-    [Flags]
-    public enum PieceAbilities
-    {
-        None = 0,
-        Castles = 1 << 0,              // royal piece that can castle (king)
-        CastlePartner = 1 << 1,        // piece the king castles with (rook)
-        CreatesEnPassant = 1 << 2,     // a 2-square straight move leaves an en-passant square (pawn)
-        CapturesEnPassant = 1 << 3,    // capture-only steps may land on the en-passant square (pawn)
-        ResetsFiftyMoveClock = 1 << 4, // moving it is irreversible (pawn)
-        Wall = 1 << 6,                 // immobile; blocks everything (even leapers); a friendly piece may stand on it
-        Berserks = 1 << 5,             // after BerserkCaptureThreshold captures, permanently gains BerserkMoves (pawn)
+        /// <summary>Can <paramref name="piece"/> use this primitive right now?</summary>
+        public bool UsableBy(Piece piece) => Condition == null || Condition.Evaluate(piece);
     }
 
     /// <summary>
     /// Data-only description of a piece type, built from pieces.json by <see cref="RulesDataLoader"/>.
-    /// No hardcoded "bishop moves diagonally" anywhere in the engine.
+    /// No hardcoded "bishop moves diagonally" anywhere in the engine. Behaviour beyond movement comes from its
+    /// <see cref="Abilities"/> (the "flags" of pieces.json).
     /// </summary>
     public sealed class PieceDefinition
     {
@@ -65,35 +57,80 @@ namespace Chess.Core
         public string DisplayName { get; }
         public char Symbol { get; }           // FEN-style letter, uppercase
         public bool IsRoyal { get; }
-        public bool PromotesOnLastRank { get; }
-        public PieceAbilities Abilities { get; }
-        /// <summary>The "flags" of pieces.json: ability ids, in file order.</summary>
-        public IReadOnlyList<string> AbilityIds { get; }
+        /// <summary>The piece's abilities, in the order of its pieces.json flags.</summary>
+        public IReadOnlyList<Ability> Abilities { get; }
         /// <summary>
         /// Move primitives: entries from "moves" are MoveOnly, from "captures" CaptureOnly; with captures "same" they do both.
         /// </summary>
         public IReadOnlyList<MovePrimitive> Moves { get; }
-        /// <summary>Full move set once berserk. Same as Moves for pieces that can't go berserk.</summary>
-        public IReadOnlyList<MovePrimitive> BerserkMoves { get; }
-        /// <summary>Captures needed to go berserk (permanently).</summary>
-        public int BerserkCaptureThreshold { get; }
+
+        // Cached because the engine asks these constantly.
+        public bool IsWall { get; }
+        public bool PromotesOnLastRank => Promotes != null;
+        public PromotesAbility Promotes { get; }
+
+        /// <summary>Upgrades this type can go through (TransformsInto abilities), in flag order.</summary>
+        public IReadOnlyList<TransformsIntoAbility> Transforms { get; }
+        /// <summary>Every "permanent" condition this type depends on (latched after each move of its side).</summary>
+        public IReadOnlyList<Condition> PermanentConditions { get; }
+
+        readonly HashSet<string> _abilityIds = new HashSet<string>();
+        // The ability that can change this type's move set (e.g. berserk), and the move set it gives.
+        readonly Ability _moveModifier;
+        readonly IReadOnlyList<MovePrimitive> _modifiedMoves;
 
         public PieceDefinition(string id, string displayName, char symbol, IEnumerable<MovePrimitive> moves,
-                               bool isRoyal = false, bool promotesOnLastRank = false,
-                               PieceAbilities abilities = PieceAbilities.None,
-                               IEnumerable<MovePrimitive> berserkMoves = null, int berserkCaptureThreshold = 0,
-                               IEnumerable<string> abilityIds = null)
+                               bool isRoyal = false, IEnumerable<Ability> abilities = null)
         {
-            Abilities = abilities;
             Id = id; DisplayName = displayName; Symbol = char.ToUpperInvariant(symbol);
+            IsRoyal = isRoyal;
             Moves = new List<MovePrimitive>(moves);
-            BerserkMoves = berserkMoves != null ? new List<MovePrimitive>(berserkMoves) : Moves;
-            BerserkCaptureThreshold = berserkCaptureThreshold;
-            AbilityIds = abilityIds != null ? new List<string>(abilityIds) : new List<string>();
-            IsRoyal = isRoyal; PromotesOnLastRank = promotesOnLastRank;
+            var list = abilities != null ? new List<Ability>(abilities) : new List<Ability>();
+            Abilities = list;
+
+            foreach (var a in list)
+            {
+                _abilityIds.Add(a.Id);
+                if (a is PromotesAbility p) Promotes = p;
+                var modified = a.BuildActiveMoves(Moves);
+                if (modified == null) continue;
+                if (_moveModifier != null)
+                    throw new RulesDataException($"pieces.json: piece '{id}': '{_moveModifier.Id}' and '{a.Id}' both change its moves — only one such ability per piece is supported");
+                _moveModifier = a;
+                _modifiedMoves = modified;
+            }
+            IsWall = Has(AbilityIds.Wall);
+
+            var transforms = new List<TransformsIntoAbility>();
+            foreach (var a in list) if (a is TransformsIntoAbility t) transforms.Add(t);
+            Transforms = transforms;
+
+            // permanent conditions reachable from the abilities and from the move patterns (both move sets)
+            var all = new HashSet<Condition>();
+            foreach (var a in list) a.Condition?.CollectAll(all);
+            foreach (var m in Moves) m.Condition?.CollectAll(all);
+            if (_modifiedMoves != null) foreach (var m in _modifiedMoves) m.Condition?.CollectAll(all);
+            var permanent = new List<Condition>();
+            foreach (var c in all) if (c.Permanent) permanent.Add(c);
+            PermanentConditions = permanent;
         }
 
-        public bool Has(PieceAbilities a) => (Abilities & a) == a;
+        public bool Has(string abilityId) => _abilityIds.Contains(abilityId);
+
+        /// <summary>The ability of type <typeparamref name="T"/>, or null.</summary>
+        public T Get<T>() where T : Ability
+        {
+            foreach (var a in Abilities) if (a is T t) return t;
+            return null;
+        }
+
+        /// <summary>Movement primitives currently in effect for <paramref name="piece"/> (base moves, or the modified set).</summary>
+        public IReadOnlyList<MovePrimitive> MovesFor(Piece piece) =>
+            _moveModifier != null && _moveModifier.IsActive(piece) ? _modifiedMoves : Moves;
+
+        /// <summary>The move set while the move-changing ability is active (same as Moves if there is none).</summary>
+        public IReadOnlyList<MovePrimitive> ModifiedMoves => _modifiedMoves ?? Moves;
+
         public override string ToString() => DisplayName;
     }
 }

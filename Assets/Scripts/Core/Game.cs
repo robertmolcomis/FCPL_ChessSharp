@@ -44,6 +44,7 @@ namespace Chess.Core
 
         readonly List<MoveRecord> _history = new List<MoveRecord>();
         readonly List<ulong> _hashes = new List<ulong>(); // hash of every position so far; [0] = initial
+        readonly Piece[] _lastMoved = new Piece[2];        // per colour: the piece that made that side's last move (move streaks)
 
         public Game(string fen = StartFen)
         {
@@ -113,7 +114,7 @@ namespace Chess.Core
             var pseudo = new List<Move>();
             foreach (var (sq, p) in Board.Pieces())
             {
-                if (p.Color != SideToMove || !p.Definition.Has(PieceAbilities.CapturesEnPassant)) continue;
+                if (p.Color != SideToMove || !p.Definition.Has(AbilityIds.CapturesEnPassant)) continue;
                 pseudo.Clear();
                 MoveGenerator.GeneratePseudoLegal(this, sq, p, pseudo);
                 foreach (var m in pseudo) if (m.Kind == MoveKind.EnPassant && IsLegal(m)) return true;
@@ -297,11 +298,23 @@ namespace Chess.Core
             }
 
             mover.MoveCount++;
-            if (captured != null && !captured.IsWall) mover.CaptureCount++; // walls aren't kills (berserk)
+            if (captured != null) mover.AddCapture(captured); // counted by name; walls too, but CaptureCount skips them
             if (!bounced && m.IsPromotion && PieceLibrary.BySymbol.TryGetValue(m.Promotion, out var promo))
                 mover.Definition = promo;
 
             var rec = new MoveRecord(m, mover, captured, capSq, before, EnPassantSquare, EnPassantVictim, HalfmoveClock, partner, bounced);
+
+            // Move streak: same piece as this side's last move → +1, otherwise the old streak ends. (Castling: the king's.)
+            int side = (int)mover.Color;
+            var prevStreak = _lastMoved[side];
+            rec.PrevStreakPiece = prevStreak;
+            rec.PrevStreakPieceStreak = prevStreak?.MoveStreak ?? 0;
+            rec.PrevMoverStreak = mover.MoveStreak;
+            if (prevStreak != null && prevStreak != mover) prevStreak.MoveStreak = 0;
+            mover.MoveStreak = prevStreak == mover ? mover.MoveStreak + 1 : 1;
+            _lastMoved[side] = mover;
+
+            ApplyPostMoveEffects(rec, mover.Color);
 
             if (m.Kind == MoveKind.DoubleStep)
             {
@@ -310,7 +323,7 @@ namespace Chess.Core
             }
             else EnPassantSquare = null;
 
-            HalfmoveClock = captured != null || before.Has(PieceAbilities.ResetsFiftyMoveClock) ? 0 : HalfmoveClock + 1;
+            HalfmoveClock = captured != null || before.Has(AbilityIds.ResetsFiftyMoveClock) ? 0 : HalfmoveClock + 1;
             if (SideToMove == PieceColor.Black) FullmoveNumber++;
             SideToMove = SideToMove.Opponent();
             _history.Add(rec);
@@ -329,9 +342,20 @@ namespace Chess.Core
             EnPassantSquare = rec.PrevEnPassant;
             EnPassantVictim = rec.PrevEnPassantVictim;
 
+            if (rec._transformations != null)
+                for (int i = rec._transformations.Count - 1; i >= 0; i--)
+                    rec._transformations[i].piece.Definition = rec._transformations[i].before;
+            if (rec.Latched != null)
+                for (int i = rec.Latched.Count - 1; i >= 0; i--)
+                    rec.Latched[i].piece.Unlatch(rec.Latched[i].condition);
+
+            _lastMoved[(int)mover.Color] = rec.PrevStreakPiece;
+            if (rec.PrevStreakPiece != null) rec.PrevStreakPiece.MoveStreak = rec.PrevStreakPieceStreak;
+            mover.MoveStreak = rec.PrevMoverStreak;
+
             mover.Definition = rec.DefinitionBefore;
             mover.MoveCount--;
-            if (rec.Captured != null && !rec.Captured.IsWall) mover.CaptureCount--;
+            if (rec.Captured != null) mover.RemoveCapture(rec.Captured);
 
             if (m.Kind == MoveKind.Castle)
             {
@@ -351,6 +375,39 @@ namespace Chess.Core
                 Board[m.To] = null;                        // clears the piece layer only; an own wall stays
                 Board[m.From] = mover;
                 if (rec.Captured != null) Board[rec.CapturedSquare] = rec.Captured;
+            }
+        }
+
+        /// <summary>
+        /// After a move of <paramref name="side"/>: latch permanent conditions that just became true, then apply
+        /// TransformsInto upgrades whose condition holds (repeated, so a new type's own upgrade can chain).
+        /// Only that side's pieces can have changed, so only they are checked.
+        /// </summary>
+        void ApplyPostMoveEffects(MoveRecord rec, PieceColor side)
+        {
+            if (!PieceLibrary.Data.HasPostMoveEffects) return;
+            foreach (var (_, p) in Board.Pieces())
+            {
+                if (p.Color != side) continue;
+                for (int guard = 0; guard < 8; guard++) // a chain of upgrades is fine; a loop of them stops here
+                {
+                    foreach (var c in p.Definition.PermanentConditions)
+                        if (!p.HasLatched(c) && c.EvaluateNow(p))
+                        {
+                            p.Latch(c);
+                            if (rec.Latched == null) rec.Latched = new List<(Piece, Condition)>();
+                            rec.Latched.Add((p, c));
+                        }
+
+                    TransformsIntoAbility upgrade = null;
+                    foreach (var t in p.Definition.Transforms)
+                        if (t.IsActive(p)) { upgrade = t; break; }
+                    if (upgrade == null) break;
+
+                    if (rec._transformations == null) rec._transformations = new List<(Piece, PieceDefinition)>();
+                    rec._transformations.Add((p, p.Definition));
+                    p.Definition = upgrade.Into;
+                }
             }
         }
 
@@ -421,21 +478,22 @@ namespace Chess.Core
                 bool white = p.Color == PieceColor.White;
                 int backRank = white ? 0 : board.Height - 1;
 
-                // Pieces with first-move-only primitives (pawns) count as moved unless on their starting rank.
+                // Pieces with patterns that depend on their move count (the pawn double step) count as moved
+                // unless on their starting rank.
                 foreach (var prim in p.Definition.Moves)
-                    if ((prim.Flags & MoveFlags.FirstMoveOnly) != 0)
+                    if (prim.Condition != null && prim.Condition.UsesStat(ConditionStats.Moves))
                     {
                         int startRank = white ? 1 : board.Height - 2;
                         if (sq.Rank != startRank) p.MoveCount = 1;
                         break;
                     }
 
-                if (p.Definition.Has(PieceAbilities.Castles))
+                if (p.Definition.Has(AbilityIds.Castles))
                 {
                     bool any = white ? castling.IndexOfAny(new[] { 'K', 'Q' }) >= 0 : castling.IndexOfAny(new[] { 'k', 'q' }) >= 0;
                     if (!any) p.MoveCount = 1;
                 }
-                else if (p.Definition.Has(PieceAbilities.CastlePartner))
+                else if (p.Definition.Has(AbilityIds.CastlePartner))
                 {
                     char k = white ? 'K' : 'k', q = white ? 'Q' : 'q';
                     bool unmoved = sq.Rank == backRank &&
@@ -478,13 +536,13 @@ namespace Chess.Core
                 int back = color == PieceColor.White ? 0 : Board.Height - 1;
                 Square? king = null;
                 foreach (var (sq, p) in Board.Pieces())
-                    if (p.Color == color && p.Definition.Has(PieceAbilities.Castles) && !p.HasMoved) king = sq;
+                    if (p.Color == color && p.Definition.Has(AbilityIds.Castles) && !p.HasMoved) king = sq;
                 if (king == null) continue;
                 var hs = Board[new Square(Board.Width - 1, back)];
                 var qs = Board[new Square(0, back)];
                 bool w = color == PieceColor.White;
-                if (hs != null && hs.Color == color && hs.Definition.Has(PieceAbilities.CastlePartner) && !hs.HasMoved) castle += w ? "K" : "k";
-                if (qs != null && qs.Color == color && qs.Definition.Has(PieceAbilities.CastlePartner) && !qs.HasMoved) castle += w ? "Q" : "q";
+                if (hs != null && hs.Color == color && hs.Definition.Has(AbilityIds.CastlePartner) && !hs.HasMoved) castle += w ? "K" : "k";
+                if (qs != null && qs.Color == color && qs.Definition.Has(AbilityIds.CastlePartner) && !qs.HasMoved) castle += w ? "Q" : "q";
             }
             sb.Append(castle.Length > 0 ? castle : "-");
             sb.Append(' ').Append(EnPassantSquare?.ToString() ?? "-");

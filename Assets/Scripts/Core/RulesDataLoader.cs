@@ -6,7 +6,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Chess.Core
 {
-    /// <summary>Thrown when pieces.json / abilities.json are malformed or inconsistent. The message says what and where.</summary>
+    /// <summary>Thrown when pieces.json / abilities.json / conditions.json are malformed or inconsistent. The message says what and where.</summary>
     public sealed class RulesDataException : Exception
     {
         public RulesDataException(string message) : base(message) { }
@@ -19,10 +19,16 @@ namespace Chess.Core
         /// <summary>"rule" (standard chess rule) or "powerup".</summary>
         public string Category { get; internal set; }
         public IReadOnlyList<string> AppliesTo { get; internal set; }
+        /// <summary>The C# behaviour name: "type" in the JSON, or the id when there is no type.</summary>
+        public string Type { get; internal set; }
+        /// <summary>When the ability is on (null = always). From "condition": a conditions.json id or an inline condition.</summary>
+        public Condition Condition { get; internal set; }
         public string DisplayName { get; internal set; }
         public string Description { get; internal set; }
         /// <summary>Raw parameters; read by the ability's C# behaviour.</summary>
         internal JObject Params { get; set; }
+        /// <summary>The C# behaviour (one shared instance; parameters are global).</summary>
+        public Ability Behaviour { get; internal set; }
 
         public bool IsPowerUp => Category == AbilityCategory.PowerUp;
     }
@@ -33,47 +39,44 @@ namespace Chess.Core
         public const string PowerUp = "powerup";
     }
 
-    /// <summary>Everything loaded from the two JSON files. Install it with <see cref="PieceLibrary.Install"/>.</summary>
+    /// <summary>Everything loaded from the three JSON files. Install it with <see cref="PieceLibrary.Install"/>.</summary>
     public sealed class RulesData
     {
         public IReadOnlyDictionary<string, PieceDefinition> PiecesByName { get; internal set; }
         public IReadOnlyDictionary<char, PieceDefinition> PiecesBySymbol { get; internal set; }
         public IReadOnlyDictionary<string, AbilityInfo> Abilities { get; internal set; }
-        /// <summary>Symbols a promoting piece may choose from, in picker order.</summary>
+        /// <summary>Named conditions from conditions.json.</summary>
+        public IReadOnlyDictionary<string, Condition> Conditions { get; internal set; }
+        /// <summary>True if some piece can transform or latch a permanent condition (the game then checks after each move).</summary>
+        public bool HasPostMoveEffects { get; internal set; }
+        /// <summary>Symbols a promoting piece may choose from, in picker order (empty if there is no Promotes ability).</summary>
         public IReadOnlyList<char> PromotionChoices { get; internal set; }
+        /// <summary>False when loaded for Classic: "powerup" abilities are defined but given to no piece.</summary>
+        public bool PowerUpsIncluded { get; internal set; }
         /// <summary>The source text, kept so save files can snapshot the exact rules a match was played with.</summary>
         public string PiecesJson { get; internal set; }
         public string AbilitiesJson { get; internal set; }
+        public string ConditionsJson { get; internal set; }
     }
 
     /// <summary>
-    /// Parses and validates pieces.json + abilities.json (format: FEATURES_PLAN.md §2).
+    /// Parses and validates pieces.json + abilities.json + conditions.json (format: FEATURES_PLAN.md §2).
     /// Pure C#: callers pass the file contents, so it runs in Unity, tests and headless tools alike.
     /// </summary>
     public static class RulesDataLoader
     {
         public const int SupportedVersion = 1;
 
-        /// <summary>Ability ids the engine knows how to run. A flag/ability outside this list is an error.</summary>
-        static readonly Dictionary<string, PieceAbilities> EngineAbilities = new Dictionary<string, PieceAbilities>
+        /// <param name="includePowerUps">false = Classic: abilities with category "powerup" are left off every piece.</param>
+        public static RulesData Load(string piecesJson, string abilitiesJson, string conditionsJson, bool includePowerUps = true)
         {
-            ["Castles"] = PieceAbilities.Castles,
-            ["CastlePartner"] = PieceAbilities.CastlePartner,
-            ["CreatesEnPassant"] = PieceAbilities.CreatesEnPassant,
-            ["CapturesEnPassant"] = PieceAbilities.CapturesEnPassant,
-            ["ResetsFiftyMoveClock"] = PieceAbilities.ResetsFiftyMoveClock,
-            ["Wall"] = PieceAbilities.Wall,
-            ["BerserkPawn"] = PieceAbilities.Berserks,
-            ["Promotes"] = PieceAbilities.None, // handled through PieceDefinition.PromotesOnLastRank
-        };
-
-        public static RulesData Load(string piecesJson, string abilitiesJson)
-        {
+            var conditionsRoot = ParseRoot(conditionsJson, "conditions.json");
             var abilitiesRoot = ParseRoot(abilitiesJson, "abilities.json");
             var piecesRoot = ParseRoot(piecesJson, "pieces.json");
 
-            var abilities = ReadAbilities(abilitiesRoot);
             var rawPieces = ReadPieceEntries(piecesRoot);
+            var conditions = ReadConditions(conditionsRoot);
+            var abilities = ReadAbilities(abilitiesRoot, conditions);
 
             // appliesTo must name real pieces
             var pieceNames = new HashSet<string>();
@@ -87,27 +90,37 @@ namespace Chess.Core
             var bySymbol = new Dictionary<char, PieceDefinition>();
             foreach (var raw in rawPieces)
             {
-                var def = BuildPiece(raw, abilities);
+                var def = BuildPiece(raw, abilities, conditions, includePowerUps);
                 byName[def.Id] = def;
                 bySymbol[def.Symbol] = def;
             }
 
+            foreach (var a in abilities.Values) a.Behaviour.Resolve(byName);
             var promotionChoices = ReadPromotionChoices(abilities, byName);
+            CheckPieceNamesInConditions(conditions, abilities, byName);
+
+            bool postMove = false;
+            foreach (var def in byName.Values)
+                if (def.Transforms.Count > 0 || def.PermanentConditions.Count > 0) postMove = true;
 
             return new RulesData
             {
                 PiecesByName = byName,
                 PiecesBySymbol = bySymbol,
                 Abilities = abilities,
+                Conditions = conditions,
+                HasPostMoveEffects = postMove,
                 PromotionChoices = promotionChoices,
+                PowerUpsIncluded = includePowerUps,
                 PiecesJson = piecesJson,
                 AbilitiesJson = abilitiesJson,
+                ConditionsJson = conditionsJson,
             };
         }
 
         // ───────────────────────── abilities.json ─────────────────────────
 
-        static Dictionary<string, AbilityInfo> ReadAbilities(JObject root)
+        static Dictionary<string, AbilityInfo> ReadAbilities(JObject root, Dictionary<string, Condition> conditions)
         {
             const string file = "abilities.json";
             var result = new Dictionary<string, AbilityInfo>();
@@ -121,8 +134,11 @@ namespace Chess.Core
                 string id = RequireString(o, "id", file, where);
                 where = $"ability '{id}'";
                 if (result.ContainsKey(id)) throw Error(file, where, "duplicate id");
-                if (!EngineAbilities.ContainsKey(id))
-                    throw Error(file, where, "the engine has no behaviour for this id (known: " + string.Join(", ", EngineAbilities.Keys) + ")");
+                string type = OptionalString(o, "type", file, where) ?? id;
+                if (!AbilityRegistry.IsKnown(type))
+                    throw Error(file, where, (type == id ? "the engine has no behaviour (C# class) for this id — give it a \"type\" or register one in AbilityRegistry"
+                                                         : $"unknown type '{type}'") +
+                                             " (known: " + string.Join(", ", AbilityRegistry.KnownIds) + ")");
 
                 string category = RequireString(o, "category", file, where);
                 if (category != AbilityCategory.Rule && category != AbilityCategory.PowerUp)
@@ -139,55 +155,41 @@ namespace Chess.Core
                 var prms = o["params"];
                 if (prms != null && prms.Type != JTokenType.Object) throw Error(file, where, "params must be an object");
 
-                result[id] = new AbilityInfo
+                var info = new AbilityInfo
                 {
                     Id = id,
+                    Type = type,
                     Category = category,
                     AppliesTo = appliesTo,
+                    Condition = o["condition"] == null ? null : ReadConditionRef(o["condition"], conditions, file, where + ".condition"),
                     DisplayName = OptionalString(o, "displayName", file, where) ?? id,
                     Description = OptionalString(o, "description", file, where) ?? "",
                     Params = (JObject)prms ?? new JObject(),
                 };
+                var behaviour = AbilityRegistry.Create(type);
+                behaviour.Info = info;
+                behaviour.KnownConditions = conditions;
+                behaviour.Configure(info.Params); // reads + validates params
+                info.Behaviour = behaviour;
+                result[id] = info;
             }
-
-            ValidateParams(result);
             return result;
         }
 
-        /// <summary>Per-ability parameter checks (types, ranges).</summary>
-        static void ValidateParams(Dictionary<string, AbilityInfo> abilities)
-        {
-            const string file = "abilities.json";
-            if (abilities.TryGetValue("BerserkPawn", out var b))
-            {
-                string where = "ability 'BerserkPawn' params";
-                int threshold = RequireInt(b.Params, "threshold", file, where);
-                if (threshold < 1) throw Error(file, where, "threshold must be >= 1");
-                string mode = RequireString(b.Params, "mode", file, where);
-                if (mode != "replace" && mode != "add") throw Error(file, where, "mode must be \"replace\" or \"add\"");
-                ReadPatterns(b.Params["captures"], MoveFlags.CaptureOnly, file, where + ".captures", required: true);
-            }
-            if (abilities.TryGetValue("Promotes", out var p))
-            {
-                string where = "ability 'Promotes' params";
-                var choices = RequireArray(p.Params, "choices", file, where);
-                if (choices.Count == 0) throw Error(file, where, "choices must list at least one piece");
-            }
-        }
-
+        /// <summary>Resolves the Promotes ability's piece names to symbols (needs every piece loaded first).</summary>
         static IReadOnlyList<char> ReadPromotionChoices(Dictionary<string, AbilityInfo> abilities, Dictionary<string, PieceDefinition> pieces)
         {
             var result = new List<char>();
-            if (!abilities.TryGetValue("Promotes", out var p)) return result;
+            if (!abilities.TryGetValue(AbilityIds.Promotes, out var p)) return result;
+            var promotes = (PromotesAbility)p.Behaviour;
             const string file = "abilities.json", where = "ability 'Promotes' params.choices";
-            foreach (var t in (JArray)p.Params["choices"])
+            foreach (var name in promotes.ChoiceNames)
             {
-                if (t.Type != JTokenType.String) throw Error(file, where, "must contain piece names (strings)");
-                string name = (string)t;
                 if (!pieces.TryGetValue(name, out var def)) throw Error(file, where, $"unknown piece '{name}'");
-                if (def.IsRoyal || def.Has(PieceAbilities.Wall)) throw Error(file, where, $"can't promote to '{name}'");
+                if (def.IsRoyal || def.IsWall) throw Error(file, where, $"can't promote to '{name}'");
                 if (!result.Contains(def.Symbol)) result.Add(def.Symbol);
             }
+            promotes.Choices = result;
             return result;
         }
 
@@ -262,24 +264,21 @@ namespace Chess.Core
             return result;
         }
 
-        static PieceDefinition BuildPiece(RawPiece raw, Dictionary<string, AbilityInfo> abilities)
+        static PieceDefinition BuildPiece(RawPiece raw, Dictionary<string, AbilityInfo> abilities, Dictionary<string, Condition> conditions, bool includePowerUps)
         {
             const string file = "pieces.json";
             string where = raw.Where;
 
-            // Abilities: known, and allowed on this piece.
-            var abilityFlags = PieceAbilities.None;
-            bool promotes = false;
-            AbilityInfo berserk = null;
+            // Abilities: defined, and allowed on this piece. Classic skips power-ups (still validated).
+            var pieceAbilities = new List<Ability>();
             foreach (var id in raw.Flags)
             {
                 if (!abilities.TryGetValue(id, out var info))
                     throw Error(file, where, $"flag '{id}' is not defined in abilities.json");
                 if (!info.AppliesTo.Contains(raw.Name))
                     throw Error(file, where, $"ability '{id}' can't be given to '{raw.Name}' (appliesTo: {string.Join(", ", info.AppliesTo)})");
-                abilityFlags |= EngineAbilities[id];
-                if (id == "Promotes") promotes = true;
-                if (id == "BerserkPawn") berserk = info;
+                if (info.IsPowerUp && !includePowerUps) continue;
+                pieceAbilities.Add(info.Behaviour);
             }
 
             // Movement: "moves" → move-only primitives, "captures" → capture-only, captures "same" → both.
@@ -288,37 +287,19 @@ namespace Chess.Core
             if (same && (string)raw.Captures != "same")
                 throw Error(file, where, "captures must be a list of patterns or \"same\"");
 
-            prims.AddRange(ReadPatterns(raw.Moves, same ? MoveFlags.None : MoveFlags.MoveOnly, file, where + ".moves", required: false));
-            if (!same) prims.AddRange(ReadPatterns(raw.Captures, MoveFlags.CaptureOnly, file, where + ".captures", required: false));
+            prims.AddRange(ReadPatterns(raw.Moves, same ? MoveFlags.None : MoveFlags.MoveOnly, file, where + ".moves", required: false, conditions));
+            if (!same) prims.AddRange(ReadPatterns(raw.Captures, MoveFlags.CaptureOnly, file, where + ".captures", required: false, conditions));
 
-            // Berserk: the capture set is replaced by (or extended with) the ability's pattern.
-            List<MovePrimitive> berserkMoves = null;
-            int threshold = 0;
-            if (berserk != null)
-            {
-                threshold = (int)berserk.Params["threshold"];
-                var extra = ReadPatterns(berserk.Params["captures"], MoveFlags.CaptureOnly, "abilities.json", "BerserkPawn.captures", required: true);
-                berserkMoves = new List<MovePrimitive>();
-                bool replace = (string)berserk.Params["mode"] == "replace";
-                foreach (var m in prims)
-                {
-                    if (!replace) { berserkMoves.Add(m); continue; }
-                    if ((m.Flags & MoveFlags.CaptureOnly) != 0) continue;                  // old capture pattern dropped
-                    berserkMoves.Add(new MovePrimitive(m.Dx, m.Dy, m.MaxRange, m.Flags | MoveFlags.MoveOnly)); // keeps its moves
-                }
-                berserkMoves.AddRange(extra);
-            }
-
-            return new PieceDefinition(raw.Name, raw.DisplayName, raw.Symbol, prims,
-                isRoyal: raw.Royal, promotesOnLastRank: promotes, abilities: abilityFlags,
-                berserkMoves: berserkMoves, berserkCaptureThreshold: threshold, abilityIds: raw.Flags);
+            return new PieceDefinition(raw.Name, raw.DisplayName, raw.Symbol, prims, raw.Royal, pieceAbilities);
         }
 
         /// <summary>
-        /// A pattern list: [{ "dirs": [[dx,dy],...], "slide": bool, "maxSteps": n, "condition": "firstMove" }, ...].
+        /// A pattern list: [{ "dirs": [[dx,dy],...], "slide": bool, "maxSteps": n, "condition": "neverMoved" }, ...].
         /// Directions are from White's view. slide = unlimited range; otherwise maxSteps (default 1).
+        /// "condition" = a conditions.json id or an inline condition; the pattern is only usable while it holds.
         /// </summary>
-        static List<MovePrimitive> ReadPatterns(JToken token, MoveFlags baseFlags, string file, string where, bool required)
+        internal static List<MovePrimitive> ReadPatterns(JToken token, MoveFlags baseFlags, string file, string where, bool required,
+                                                         IReadOnlyDictionary<string, Condition> conditions)
         {
             var result = new List<MovePrimitive>();
             if (token == null)
@@ -353,12 +334,7 @@ namespace Chess.Core
 
                 var flags = baseFlags;
                 var condTok = o["condition"];
-                if (condTok != null)
-                {
-                    if (condTok.Type != JTokenType.String || (string)condTok != "firstMove")
-                        throw Error(file, w, "condition must be \"firstMove\"");
-                    flags |= MoveFlags.FirstMoveOnly;
-                }
+                Condition condition = condTok == null ? null : ReadConditionRef(condTok, conditions, file, w + ".condition");
 
                 if (!(o["dirs"] is JArray dirs) || dirs.Count == 0) throw Error(file, w, "dirs must be a non-empty list of [dx, dy] pairs");
                 foreach (var d in dirs)
@@ -367,10 +343,179 @@ namespace Chess.Core
                         throw Error(file, w, $"bad direction {d.ToString(Formatting.None)} — expected [dx, dy] with whole numbers");
                     int dx = (int)pair[0], dy = (int)pair[1];
                     if (dx == 0 && dy == 0) throw Error(file, w, "direction [0, 0] is not a move");
-                    result.Add(new MovePrimitive(dx, dy, range, flags));
+                    result.Add(new MovePrimitive(dx, dy, range, flags, condition));
                 }
             }
             return result;
+        }
+
+        // ───────────────────────── conditions.json ─────────────────────────
+
+        static readonly HashSet<string> NamedConditionFields = new HashSet<string>
+            { "id", "displayName", "description", "permanent", "stat", "of", "except", "op", "value", "all", "any", "not" };
+        static readonly HashSet<string> InlineConditionFields = new HashSet<string>
+            { "stat", "of", "except", "op", "value", "all", "any", "not" };
+
+        static Dictionary<string, Condition> ReadConditions(JObject root)
+        {
+            const string file = "conditions.json";
+            var list = RequireArray(root, "conditions", file, "root");
+            var result = new Dictionary<string, Condition>();
+
+            // Pass 1: create every named condition, so they can refer to each other in any order.
+            var bodies = new List<(JObject o, Condition c, string where)>();
+            for (int i = 0; i < list.Count; i++)
+            {
+                string where = $"conditions[{i}]";
+                if (!(list[i] is JObject o)) throw Error(file, where, "must be an object");
+                string id = RequireString(o, "id", file, where);
+                where = $"condition '{id}'";
+                if (result.ContainsKey(id)) throw Error(file, where, "duplicate id");
+
+                var permTok = o["permanent"];
+                if (permTok != null && permTok.Type != JTokenType.Boolean) throw Error(file, where, "permanent must be true or false");
+
+                var c = new Condition
+                {
+                    Id = id,
+                    DisplayName = OptionalString(o, "displayName", file, where) ?? id,
+                    Description = OptionalString(o, "description", file, where) ?? "",
+                    Permanent = permTok != null && (bool)permTok,
+                };
+                result[id] = c;
+                bodies.Add((o, c, where));
+            }
+
+            // Pass 2: fill them in.
+            foreach (var (o, c, where) in bodies) ReadConditionBody(o, c, result, file, where, NamedConditionFields);
+
+            // No condition may (indirectly) contain itself.
+            var state = new Dictionary<Condition, int>(); // 1 = visiting, 2 = done
+            foreach (var c in result.Values) CheckCycle(c, state, new List<string>());
+            return result;
+        }
+
+        static void CheckCycle(Condition c, Dictionary<Condition, int> state, List<string> path)
+        {
+            state.TryGetValue(c, out int s);
+            if (s == 2) return;
+            if (c.Id != null) path.Add(c.Id);
+            if (s == 1) throw new RulesDataException($"conditions.json: condition '{c.Id}': refers to itself ({string.Join(" → ", path)})");
+            state[c] = 1;
+            foreach (var child in c.Children) CheckCycle(child, state, path);
+            state[c] = 2;
+            if (c.Id != null) path.RemoveAt(path.Count - 1);
+        }
+
+        /// <summary>A "condition" value: an id from conditions.json, or an inline condition object.</summary>
+        internal static Condition ReadConditionRef(JToken token, IReadOnlyDictionary<string, Condition> conditions, string file, string where)
+        {
+            if (token.Type == JTokenType.String)
+            {
+                var id = (string)token;
+                if (conditions == null || !conditions.TryGetValue(id, out var named))
+                    throw Error(file, where, $"unknown condition '{id}' (not in conditions.json)");
+                return named;
+            }
+            if (token is JObject o)
+            {
+                var c = new Condition();
+                ReadConditionBody(o, c, conditions, file, where, InlineConditionFields);
+                return c;
+            }
+            throw Error(file, where, "a condition must be a conditions.json id (string) or a condition object");
+        }
+
+        static void ReadConditionBody(JObject o, Condition c, IReadOnlyDictionary<string, Condition> conditions, string file, string where,
+                                      HashSet<string> allowedFields)
+        {
+            c.Where = $"{file}: {where}";
+            foreach (var prop in o.Properties())
+                if (!allowedFields.Contains(prop.Name))
+                    throw Error(file, where, allowedFields == InlineConditionFields && NamedConditionFields.Contains(prop.Name)
+                        ? $"'{prop.Name}' is only allowed on named conditions in conditions.json"
+                        : $"unknown field '{prop.Name}' (allowed: {string.Join(", ", allowedFields)})");
+
+            int shapes = 0;
+            foreach (var k in new[] { "stat", "all", "any", "not" }) if (o[k] != null) shapes++;
+            if (shapes != 1) throw Error(file, where, "needs exactly one of \"stat\", \"all\", \"any\", \"not\"");
+
+            if (o["stat"] != null)
+            {
+                c.Kind = Condition.Shape.Compare;
+                c.Stat = RequireString(o, "stat", file, where);
+                if (!ConditionStats.TryGet(c.Stat, out var statDef))
+                    throw Error(file, where, $"unknown stat '{c.Stat}' (known: {string.Join(", ", ConditionStats.KnownStats)})");
+                c.StatDef = statDef;
+
+                c.Op = RequireString(o, "op", file, where);
+                if (Array.IndexOf(Condition.Operators, c.Op) < 0)
+                    throw Error(file, where, $"op must be one of {string.Join(" ", Condition.Operators)}, got \"{c.Op}\"");
+
+                var v = o["value"];
+                if (v == null || v.Type != JTokenType.Integer) throw Error(file, where, "'value' must be a whole number");
+                c.Value = (int)v;
+
+                c.Of = ReadNameList(o, "of", file, where);
+                c.Except = ReadNameList(o, "except", file, where);
+                if ((c.Of != null || c.Except != null) && !statDef.CountsPieces)
+                    throw Error(file, where, $"stat '{c.Stat}' doesn't count pieces, so it can't use \"of\" / \"except\"");
+                return;
+            }
+
+            foreach (var k in new[] { "op", "value", "of", "except" })
+                if (o[k] != null) throw Error(file, where, $"'{k}' only goes with \"stat\"");
+
+            if (o["not"] != null)
+            {
+                c.Kind = Condition.Shape.Not;
+                c.Children = new[] { ReadConditionRef(o["not"], conditions, file, where + ".not") };
+                return;
+            }
+
+            string key = o["all"] != null ? "all" : "any";
+            c.Kind = key == "all" ? Condition.Shape.All : Condition.Shape.Any;
+            if (!(o[key] is JArray arr) || arr.Count == 0) throw Error(file, where, $"'{key}' must be a non-empty list of conditions");
+            var children = new List<Condition>();
+            for (int i = 0; i < arr.Count; i++) children.Add(ReadConditionRef(arr[i], conditions, file, $"{where}.{key}[{i}]"));
+            c.Children = children;
+        }
+
+        /// <summary>"of" / "except": a piece name or a list of them (checked against pieces.json once pieces are loaded).</summary>
+        static IReadOnlyCollection<string> ReadNameList(JObject o, string key, string file, string where)
+        {
+            var t = o[key];
+            if (t == null) return null;
+            var names = new List<string>();
+            if (t.Type == JTokenType.String) names.Add((string)t);
+            else if (t is JArray arr && arr.Count > 0)
+                foreach (var n in arr)
+                {
+                    if (n.Type != JTokenType.String) throw Error(file, where, $"'{key}' must contain piece names (strings)");
+                    names.Add((string)n);
+                }
+            else throw Error(file, where, $"'{key}' must be a piece name or a non-empty list of piece names");
+            return names;
+        }
+
+        /// <summary>Every "of" / "except" must name a piece from pieces.json — catches typos like "knigth".</summary>
+        static void CheckPieceNamesInConditions(Dictionary<string, Condition> conditions, Dictionary<string, AbilityInfo> abilities,
+                                                Dictionary<string, PieceDefinition> pieces)
+        {
+            var all = new HashSet<Condition>();
+            foreach (var c in conditions.Values) c.CollectAll(all);
+            foreach (var a in abilities.Values) a.Condition?.CollectAll(all);
+            foreach (var def in pieces.Values)
+            {
+                foreach (var m in def.Moves) m.Condition?.CollectAll(all);
+                foreach (var m in def.ModifiedMoves) m.Condition?.CollectAll(all);
+            }
+            foreach (var c in all)
+                foreach (var list in new[] { c.Of, c.Except })
+                    if (list != null)
+                        foreach (var name in list)
+                            if (!pieces.ContainsKey(name))
+                                throw new RulesDataException($"{c.Where}: unknown piece '{name}' (not in pieces.json)");
         }
 
         // ───────────────────────── helpers ─────────────────────────
@@ -411,13 +556,6 @@ namespace Chess.Core
             if (t == null) return null;
             if (t.Type != JTokenType.String) throw Error(file, where, $"'{key}' must be a string");
             return (string)t;
-        }
-
-        static int RequireInt(JObject o, string key, string file, string where)
-        {
-            var t = o[key];
-            if (t == null || t.Type != JTokenType.Integer) throw Error(file, where, $"'{key}' must be a whole number");
-            return (int)t;
         }
     }
 }

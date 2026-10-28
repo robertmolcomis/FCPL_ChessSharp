@@ -40,12 +40,20 @@
     {
       "id": "BerserkPawn", "category": "powerup", "appliesTo": ["pawn"],
       "displayName": "Berserk",
-      "description": "After capturing 2 pieces, this pawn can also capture straight forward and straight backward.",
+      "description": "Once bloodied, this pawn can also capture straight forward and straight backward.",
+      "condition": "captureTwoPieces",
       "params": {
-        "threshold": 2,
         "mode": "replace",
         "captures": [ { "dirs": [[-1, 1], [0, 1], [1, 1], [0, -1]] } ]
       }
+    },
+    {
+      "id": "KnightToPaladin", "category": "powerup", "appliesTo": ["knight"],
+      "displayName": "Path of the Paladin",
+      "description": "A knight that slays an enemy knight becomes a Paladin.",
+      "condition": "slewAKnight",
+      "type": "TransformsInto",
+      "params": { "into": "paladin" }
     }
   ]
 }

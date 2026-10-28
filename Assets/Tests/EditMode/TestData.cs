@@ -9,6 +9,11 @@ namespace Chess.Core.Tests
         public const string Folder = "Assets/StreamingAssets/Data";
         public static string PiecesJson => File.ReadAllText(Path.Combine(Folder, "pieces.json"));
         public static string AbilitiesJson => File.ReadAllText(Path.Combine(Folder, "abilities.json"));
+        public static string ConditionsJson => File.ReadAllText(Path.Combine(Folder, "conditions.json"));
+
+        /// <summary>Installs the real data (optionally without power-ups).</summary>
+        public static void Install(bool includePowerUps = true) =>
+            PieceLibrary.LoadFromJson(PiecesJson, AbilitiesJson, ConditionsJson, includePowerUps);
     }
 
     /// <summary>Installs the real piece data once before any test in this namespace runs.</summary>
@@ -16,6 +21,6 @@ namespace Chess.Core.Tests
     public class RulesDataSetup
     {
         [OneTimeSetUp]
-        public void LoadPieceData() => PieceLibrary.LoadFromJson(TestData.PiecesJson, TestData.AbilitiesJson);
+        public void LoadPieceData() => TestData.Install();
     }
 }

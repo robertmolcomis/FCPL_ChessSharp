@@ -17,7 +17,7 @@ namespace Chess.Core
 
             foreach (var prim in piece.Moves)
             {
-                if ((prim.Flags & MoveFlags.FirstMoveOnly) != 0 && piece.HasMoved) continue;
+                if (!prim.UsableBy(piece)) continue;
 
                 bool moveOnly = (prim.Flags & MoveFlags.MoveOnly) != 0;
                 bool captureOnly = (prim.Flags & MoveFlags.CaptureOnly) != 0;
@@ -54,12 +54,12 @@ namespace Chess.Core
                         if (!captureOnly)
                         {
                             var kind = MoveKind.Normal;
-                            if (step == 2 && dx == 0 && piece.Definition.Has(PieceAbilities.CreatesEnPassant))
+                            if (step == 2 && dx == 0 && piece.Definition.Has(AbilityIds.CreatesEnPassant))
                                 kind = MoveKind.DoubleStep;
                             Add(game, from, sq, piece, kind, default, output, start);
                         }
                         else if (step == 1 && dx != 0 && game.EnPassantSquare == sq &&
-                                 piece.Definition.Has(PieceAbilities.CapturesEnPassant))
+                                 piece.Definition.Has(AbilityIds.CapturesEnPassant))
                         {
                             var victim = board[game.EnPassantVictim];
                             if (victim != null && victim.Color != piece.Color)
@@ -74,48 +74,9 @@ namespace Chess.Core
                 }
             }
 
-            if (piece.Definition.Has(PieceAbilities.Castles) && !piece.HasMoved)
-                GenerateCastling(game, from, piece, output);
-        }
-
-        /// <summary>
-        /// Generic castling: the unmoved castling piece moves 2 squares toward an unmoved partner on the same rank
-        /// with only empty squares between them; the partner lands on the square it passed.
-        /// Can't castle out of, through, or into check.
-        /// </summary>
-        static void GenerateCastling(Game game, Square kingSq, Piece king, List<Move> output)
-        {
-            var board = game.Board;
-            var enemy = king.Color.Opponent();
-            bool inCheckChecked = false;
-
-            foreach (int dir in new[] { 1, -1 })
-            {
-                // find the first piece in this direction
-                var sq = kingSq.Offset(dir, 0);
-                while (board.IsValid(sq) && board[sq] == null) sq = sq.Offset(dir, 0);
-                if (!board.IsValid(sq)) continue;
-
-                var partner = board[sq];
-                if (partner.Color != king.Color || partner.HasMoved || !partner.Definition.Has(PieceAbilities.CastlePartner)) continue;
-
-                var kingTo = kingSq.Offset(2 * dir, 0);
-                var pass = kingSq.Offset(dir, 0);
-                if (!board.IsValid(kingTo)) continue;
-                // king's destination must be empty or the partner itself (partner moves away)
-                var atDest = board[kingTo];
-                if (atDest != null && atDest != partner) continue;
-
-                if (!inCheckChecked)
-                {
-                    if (IsAttacked(board, kingSq, enemy)) return; // can't castle out of check
-                    inCheckChecked = true;
-                }
-                if (IsAttacked(board, pass, enemy)) continue; // through check
-                // "into check" is filtered by the normal legality test
-
-                output.Add(new Move(kingSq, kingTo, '\0', MoveKind.Castle, sq));
-            }
+            // Ability hook: extra moves such as castling.
+            foreach (var ability in piece.Definition.Abilities)
+                ability.GenerateExtraMoves(game, from, piece, output);
         }
 
         /// <summary>
@@ -152,12 +113,13 @@ namespace Chess.Core
                 if (output[i].To == to && output[i].Kind != MoveKind.Castle) return;
 
             var board = game.Board;
-            if (piece.Definition.PromotesOnLastRank)
+            var promotes = piece.Definition.Promotes;
+            if (promotes != null)
             {
                 int lastRank = piece.Color == PieceColor.White ? board.Height - 1 : 0;
                 if (to.Rank == lastRank)
                 {
-                    foreach (var p in PieceLibrary.PromotionChoices)
+                    foreach (var p in promotes.Choices)
                         output.Add(new Move(from, to, p, kind, aux));
                     return;
                 }
@@ -206,7 +168,7 @@ namespace Chess.Core
             foreach (var prim in piece.Moves)
             {
                 if ((prim.Flags & MoveFlags.MoveOnly) != 0) continue;
-                if ((prim.Flags & MoveFlags.FirstMoveOnly) != 0 && piece.HasMoved) continue;
+                if (!prim.UsableBy(piece)) continue;
                 int dx = prim.Dx, dy = prim.Dy * fwd;
 
                 // target must equal k * (dx, dy) for some k >= 1

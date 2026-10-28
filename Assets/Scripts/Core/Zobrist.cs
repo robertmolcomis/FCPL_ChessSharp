@@ -20,7 +20,7 @@ namespace Chess.Core
                 k = Mix(k ^ ((ulong)sq.File << 8) ^ (ulong)sq.Rank);
 
                 // Castling rights are part of the position: an unmoved king/rook differs from a moved one.
-                if (!p.HasMoved && (p.Definition.Has(PieceAbilities.Castles) || p.Definition.Has(PieceAbilities.CastlePartner)))
+                if (!p.HasMoved && (p.Definition.Has(AbilityIds.Castles) || p.Definition.Has(AbilityIds.CastlePartner)))
                     k = Mix(k ^ 0xC0FFEEUL);
 
                 // Hook for M3: per-piece upgrades/modifiers must change the hash.
