@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "conditions": [
+    {
+      "id": "neverMoved",
+      "displayName": "Unmoved",
+      "description": "This piece hasn't moved yet.",
+      "stat": "moves", "op": "==", "value": 0
+    },
+    {
+      "id": "captureTwoPieces",
+      "displayName": "Bloodied",
+      "description": "Has captured at least 2 pieces (walls don't count).",
+      "stat": "captures", "except": ["wall"], "op": ">=", "value": 2
+    },
+    {
+      "id": "slewAKnight",
+      "displayName": "Knight-slayer",
+      "description": "Has captured an enemy knight.",
+      "stat": "captures", "of": "knight", "op": ">=", "value": 1
+    },
+    {
+      "id": "onARoll",
+      "displayName": "On a roll",
+      "description": "Moved on each of its side's last 3 turns.",
+      "stat": "moveStreak", "op": ">=", "value": 3,
+      "permanent": false
+    }
+  ]
+}
