@@ -48,10 +48,37 @@ namespace Chess.Core
 
         public Game(string fen = StartFen)
         {
+            InitialFen = fen;
             Board = LoadFen(fen);
             _hashes.Add(Zobrist.Compute(this));
             UpdateStatus();
         }
+
+        /// <summary>
+        /// Builds a game from a save-file snapshot (see <see cref="PositionCodec"/>). The pieces already carry their
+        /// own state (move counts, captures, streaks, latched conditions), so nothing is inferred here.
+        /// <paramref name="lastMovedWhite"/>/<paramref name="lastMovedBlack"/>: the piece on a move streak for each side, or null.
+        /// </summary>
+        internal Game(Board board, PieceColor sideToMove, Square? enPassant, int halfmove, int fullmove,
+                      Piece lastMovedWhite, Piece lastMovedBlack)
+        {
+            Board = board;
+            SideToMove = sideToMove;
+            HalfmoveClock = halfmove;
+            FullmoveNumber = fullmove;
+            _lastMoved[(int)PieceColor.White] = lastMovedWhite;
+            _lastMoved[(int)PieceColor.Black] = lastMovedBlack;
+            if (enPassant is Square ep)
+            {
+                EnPassantSquare = ep;
+                EnPassantVictim = ep.Offset(0, SideToMove == PieceColor.White ? -1 : 1);
+            }
+            _hashes.Add(Zobrist.Compute(this));
+            UpdateStatus();
+        }
+
+        /// <summary>The FEN this game started from, or null when it was built from a save snapshot.</summary>
+        public string InitialFen { get; }
 
         // ───────────────────────── Queries ─────────────────────────
 
@@ -200,6 +227,9 @@ namespace Chess.Core
             DrawOfferedBy = null;
             StateChanged?.Invoke();
         }
+
+        /// <summary>Save files: puts back a pending draw offer as it was (even in a finished game), without raising events.</summary>
+        internal void RestoreDrawOffer(PieceColor? who) => DrawOfferedBy = who;
 
         public void DeclineDraw()
         {

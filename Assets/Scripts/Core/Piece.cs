@@ -78,6 +78,14 @@ namespace Chess.Core
             if (!captured.IsWall) CaptureCount++;
         }
 
+        /// <summary>Save files: sets how many pieces of type <paramref name="of"/> this piece has captured.</summary>
+        internal void RestoreCaptures(PieceDefinition of, int count)
+        {
+            int old = CapturesOf(of.Id);
+            if (count > 0) _captures[of.Id] = count; else _captures.Remove(of.Id);
+            if (!of.IsWall) CaptureCount += count - old;
+        }
+
         internal void RemoveCapture(Piece captured)
         {
             var name = captured.Definition.Id;

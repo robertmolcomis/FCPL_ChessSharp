@@ -1,5 +1,7 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using Chess.Core;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -61,6 +63,13 @@ namespace Chess.Unity
         readonly List<GameObject> _highlightPool = new List<GameObject>();
         int _highlightsUsed;
 
+        // Save files of the current match (written after every move / undo / resign / draw).
+        MatchRecorder _recorder;
+        bool _matchStarted;   // a fresh game only replaces the saved match once something happens in it
+        bool _hasSave;        // cached File.Exists for the Continue button
+        string _notice;
+        float _noticeUntil;
+
         InputState _state = InputState.Idle;
         Square _selected;
         List<Move> _selectedMoves = new List<Move>();
@@ -82,6 +91,7 @@ namespace Chess.Unity
             _highlightRoot = NewRoot("Highlights");
             _pickerRoot = NewRoot("PromotionPicker");
 
+            _hasSave = SaveFiles.HasLastMatch;
             NewGame();
         }
 
@@ -94,8 +104,25 @@ namespace Chess.Unity
 
         void NewGame()
         {
+            var game = new Game(!string.IsNullOrWhiteSpace(startFen) ? startFen : classicMode ? Game.ClassicFen : Game.StartFen);
+            ShowGame(game, MatchRecorder.Start(game), fromSave: false);
+        }
+
+        /// <summary>Makes <paramref name="game"/> the one on screen and records it from now on.</summary>
+        void ShowGame(Game game, MatchRecorder recorder, bool fromSave)
+        {
             StopAllCoroutines();
-            _game = new Game(!string.IsNullOrWhiteSpace(startFen) ? startFen : classicMode ? Game.ClassicFen : Game.StartFen);
+            if (_game != null)
+            {
+                _game.MoveMade -= OnMoveMade;
+                _game.StateChanged -= SaveMatch;
+            }
+            _game = game;
+            _recorder = recorder;
+            _matchStarted = fromSave;
+            _game.MoveMade += OnMoveMade;
+            _game.StateChanged += SaveMatch;
+
             _state = InputState.Idle;
             _selectedMoves.Clear();
             ClosePicker();
@@ -105,6 +132,84 @@ namespace Chess.Unity
             BuildSquares();
             RebuildPieces();
             RefreshHighlights();
+        }
+
+        // ───────────────────────── Save / Continue ─────────────────────────
+
+        void OnMoveMade(MoveRecord _) => SaveMatch();
+
+        void SaveMatch()
+        {
+            if (!_matchStarted)
+            {
+                if (_game.History.Count == 0 && !_game.IsOver) return; // e.g. a draw offer before the first move
+                _matchStarted = true;
+            }
+            try
+            {
+                SaveFiles.Write(_recorder.WriteMovesFile(), _recorder.WriteBoardFile());
+                _hasSave = true;
+            }
+            catch (Exception e)
+            {
+                // Never let saving break the game itself.
+                Debug.LogError($"[Chess] Couldn't save the match to {SaveFiles.Folder}: {e}");
+                ShowNotice("Couldn't save the match (see console)");
+            }
+        }
+
+        /// <summary>Rebuilds the last played match from its save files.</summary>
+        void ContinueLastMatch()
+        {
+            if (_state == InputState.Animating) return;
+
+            byte[] boardFile, movesFile;
+            bool classic;
+            try
+            {
+                boardFile = SaveFiles.ReadBoard();
+                movesFile = SaveFiles.ReadMovesOrNull();
+                classic = SaveFormat.IsClassic(boardFile, SaveFormat.FileKind.Board);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is SaveFormatException)
+            {
+                ShowNotice($"Couldn't continue: {e.Message}");
+                _hasSave = SaveFiles.HasLastMatch;
+                return;
+            }
+
+            // The saved match may have been played in the other mode: load its rules first.
+            bool powerUpsBefore = PieceLibrary.Data.PowerUpsIncluded;
+            bool switchRules = classic == powerUpsBefore;
+            if (switchRules && !RulesBootstrap.Load(includePowerUps: !classic))
+            {
+                RulesBootstrap.Load(includePowerUps: powerUpsBefore);
+                ShowNotice("Couldn't continue: the rules for that match didn't load");
+                return;
+            }
+
+            ContinuedMatch match;
+            try
+            {
+                match = MatchSave.Continue(boardFile, movesFile);
+            }
+            catch (SaveFormatException e)
+            {
+                if (switchRules) RulesBootstrap.Load(includePowerUps: powerUpsBefore); // the current game needs its own rules back
+                ShowNotice($"Couldn't continue: {e.Message}");
+                return;
+            }
+
+            classicMode = classic;
+            ShowGame(match.Game, match.Recorder, fromSave: true);
+            ShowNotice(match.HistoryRestored ? "Continued the last match"
+                                             : "Continued the last match (no usable move list, so undo starts here)");
+        }
+
+        void ShowNotice(string text, float seconds = 4f)
+        {
+            _notice = text;
+            _noticeUntil = Time.time + seconds;
         }
 
         // ───────────────────────── Setup ─────────────────────────
@@ -537,18 +642,22 @@ namespace Chess.Unity
             GUI.Box(new Rect(0, 0, Screen.width, HudBarHeight), GUIContent.none);
 
             string status;
-            if (_game.IsOver) status = _game.Status.Describe(_game.Winner);
+            if (_notice != null && Time.time < _noticeUntil) status = _notice;
+            else if (_game.IsOver) status = _game.Status.Describe(_game.Winner);
             else
             {
                 status = $"{_game.SideToMove} to move";
                 if (_game.IsInCheck(_game.SideToMove)) status += " — CHECK!";
                 if (_game.DrawOfferedBy == _game.SideToMove) status += "  (draw offered)";
             }
-            GUI.Label(new Rect(12, 0, Screen.width - 460, HudBarHeight), status, _statusStyle);
+            GUI.Label(new Rect(12, 0, Screen.width - 572, HudBarHeight), status, _statusStyle);
 
             bool busy = _state == InputState.Animating;
+            float x = Screen.width - 562, y = 7, w = 105, h = HudBarHeight - 14;
+            GUI.enabled = !busy && _hasSave;
+            if (GUI.Button(new Rect(x, y, w, h), "Continue")) ContinueLastMatch();
+            x += 112;
             GUI.enabled = !busy;
-            float x = Screen.width - 450, y = 7, w = 105, h = HudBarHeight - 14;
             if (GUI.Button(new Rect(x, y, w, h), "Undo")) DoUndo();
             GUI.enabled = !busy && !_game.IsOver && _game.DrawOfferedBy == null;
             if (GUI.Button(new Rect(x + 112, y, w, h), "Offer draw")) _game.OfferDraw(_game.SideToMove);
