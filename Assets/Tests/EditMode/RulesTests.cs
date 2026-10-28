@@ -288,6 +288,16 @@ namespace Chess.Core.Tests
             Assert.AreEqual(0, g.Board[S("d3")].CaptureCount);
         }
 
+        [Test]
+        public void BreakingWallUnderPieceIsNotAKill()
+        {
+            // black knight on its wall c6; the white pawn b5 "captures" it: the wall breaks, the pawn stays on b5.
+            var g = new Game("4k3/8/2w5/1P6/3n4/8/8/4K3 b - - 0 1");
+            Play(g, "d4c6", "b5c6");
+            Assert.IsNull(g.Board.WallAt(S("c6")));
+            Assert.AreEqual(0, g.Board[S("b5")].CaptureCount);
+        }
+
         // ───── Archbishop ─────
 
         [Test]

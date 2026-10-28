@@ -39,8 +39,13 @@ namespace Chess.Unity
         [SerializeField] float pieceScale = 0.85f;
         [SerializeField] float moveDuration = 0.18f;
 
+        [Header("Mode")]
+        [Tooltip("Classic = standard chess: classic start position and only \"rule\" abilities (no power-ups). " +
+                 "Applies when Play starts. Temporary until the menu exists.")]
+        [SerializeField] bool classicMode;
+
         [Header("Debug")]
-        [Tooltip("Optional FEN to start from (empty = standard start position).")]
+        [Tooltip("Optional FEN to start from (empty = the mode's start position).")]
         [SerializeField] string startFen = "";
 
         // Sorting orders (back → front)
@@ -63,6 +68,9 @@ namespace Chess.Unity
 
         void Start()
         {
+            // Piece and ability definitions come from StreamingAssets/Data/*.json.
+            if (!RulesBootstrap.Load(includePowerUps: !classicMode)) { enabled = false; return; }
+
             _cam = Camera.main;
 
             // Unlit sprites, so nothing depends on 2D lights in the scene.
@@ -87,7 +95,7 @@ namespace Chess.Unity
         void NewGame()
         {
             StopAllCoroutines();
-            _game = new Game(string.IsNullOrWhiteSpace(startFen) ? Game.StartFen : startFen);
+            _game = new Game(!string.IsNullOrWhiteSpace(startFen) ? startFen : classicMode ? Game.ClassicFen : Game.StartFen);
             _state = InputState.Idle;
             _selectedMoves.Clear();
             ClosePicker();
@@ -162,7 +170,7 @@ namespace Chess.Unity
                 aura.transform.localScale = Vector3.one * squareSize * Mathf.Min(0.98f, pieceScale * 1.12f);
             }
 
-            if (custom == null && def.Has(PieceAbilities.Wall))
+            if (custom == null && def.IsWall)
             {
                 // Placeholder wall: brick tile; the backing colour shows through as mortar and outline.
                 float s = squareSize * 0.92f;
@@ -206,7 +214,7 @@ namespace Chess.Unity
 
         /// <summary>A pawn (anything that can go berserk) with at least one kill but not berserk yet.</summary>
         static bool HasKillMark(Piece p) =>
-            p.Definition.Has(PieceAbilities.Berserks) && p.CaptureCount > 0 && !p.IsBerserk;
+            p.Definition.Has(AbilityIds.BerserkPawn) && p.CaptureCount > 0 && !p.IsBerserk;
 
         TextMesh CreateLabel(string text, Transform parent, Vector3 worldPos, Color color, float charSize, int order)
         {
@@ -347,9 +355,9 @@ namespace Chess.Unity
             dim.transform.position = new Vector3(b.Width * squareSize / 2f, b.Height * squareSize / 2f, 0);
             dim.transform.localScale = new Vector3(b.Width * squareSize, b.Height * squareSize, 1);
 
-            // Order options like PieceLibrary.PromotionChoices (Q, R, B, N), stacked from the target square toward the centre.
+            // Options in the order of the Promotes ability's "choices" (Q, R, B, N), stacked from the target square toward the centre.
             int i = 0;
-            foreach (var symbol in PieceLibrary.PromotionChoices)
+            foreach (var symbol in _game.Board[promotions[0].From].Definition.Promotes.Choices)
             {
                 var move = promotions.Find(m => m.Promotion == symbol);
                 if (move.Promotion == '\0') continue;
@@ -421,13 +429,17 @@ namespace Chess.Unity
             }
 
             // A capture can change the pawn's look (kill mark → berserk), so rebuild its view.
-            bool killChangedLook = record.Captured != null && record.Mover.Definition.Has(PieceAbilities.Berserks);
+            bool killChangedLook = record.Captured != null && record.Mover.Definition.Has(AbilityIds.BerserkPawn);
             if (record.Promoted || killChangedLook)
             {
                 Destroy(_pieceViews[record.Mover.Id]);
                 _pieceViews[record.Mover.Id] = CreatePieceView(record.Mover.Definition, record.Mover.Color,
                     SquareToWorld(record.MoverSquare), _piecesRoot, OrderPiece, $"{record.Mover} #{record.Mover.Id}", record.Mover.IsBerserk, HasKillMark(record.Mover));
             }
+
+            // Another piece upgraded after this move (e.g. knight → paladin when its condition was met off-move): redraw all.
+            foreach (var (piece, _) in record.Transformations)
+                if (piece != record.Mover) { RebuildPieces(); break; }
 
             _state = InputState.Idle;
             RefreshHighlights();
