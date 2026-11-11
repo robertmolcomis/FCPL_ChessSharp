@@ -48,17 +48,28 @@ namespace Chess.Core
     public sealed class ReplayTimeline
     {
         readonly List<ReplayFrame> _frames = new List<ReplayFrame>();
+        MatchRecorder.SavedMoves _saved;
 
         /// <summary>Frame 0 is the start position; frame <see cref="MoveCount"/> is the final position.</summary>
         public IReadOnlyList<ReplayFrame> Frames => _frames;
         public int MoveCount => _frames.Count - 1;
+
+        /// <summary>
+        /// Takes over from the position after <paramref name="ply"/> moves: a new game with exactly those moves played
+        /// (so Undo goes back through them) and a recorder that saves it from there. Nothing is written to disk by this call.
+        /// </summary>
+        public MatchRecorder ResumeAt(int ply)
+        {
+            if (ply < 0 || ply > MoveCount) throw new System.ArgumentOutOfRangeException(nameof(ply));
+            return MatchRecorder.Resume(_saved.Truncated(ply));
+        }
 
         /// <summary>Builds the timeline from a move-history file. The matching rules must be loaded. Throws <see cref="SaveFormatException"/>.</summary>
         public static ReplayTimeline FromMovesFile(byte[] movesFile) => FromSavedMoves(MatchRecorder.ReadMovesFile(movesFile));
 
         public static ReplayTimeline FromSavedMoves(MatchRecorder.SavedMoves saved)
         {
-            var timeline = new ReplayTimeline();
+            var timeline = new ReplayTimeline { _saved = saved };
             var game = MatchRecorder.BuildStart(saved.Kind, saved.StartPosition);
             timeline._frames.Add(Capture(game, 0, null, "Start"));
             for (int i = 0; i < saved.Moves.Count; i++)

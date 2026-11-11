@@ -162,5 +162,78 @@ namespace Chess.Core.Tests
             Assert.AreEqual(positions.Count, t.Frames.Count);
             for (int i = 0; i < positions.Count; i++) Assert.AreEqual(positions[i], Describe(t.Frames[i]), $"frame {i}");
         }
+
+        // ───────────────────────── "Play from here" ─────────────────────────
+
+        [Test]
+        public void TakeOverMidGamePlaysOnWithFullUndo()
+        {
+            var g = new Game(); var rec = MatchRecorder.Start(g);
+            Play(g, "g1f3", "g8f6", "b1c3", "b8c6", "f3g5");
+            var movesFile = rec.WriteMovesFile();
+            var t = ReplayTimeline.FromMovesFile(movesFile);
+
+            var branch = t.ResumeAt(3);
+            Assert.AreEqual(3, branch.Game.History.Count);
+            Assert.AreEqual(Describe(t.Frames[3]), Describe(branch.Game));
+            Assert.AreEqual(PieceColor.Black, branch.Game.SideToMove);
+
+            // Play a different line; it's saved, the first game's file isn't affected.
+            Play(branch.Game, "d6d5");
+            var branchFile = branch.WriteMovesFile();
+            Assert.AreNotEqual(movesFile, branchFile);
+            Assert.AreEqual(4, ReplayTimeline.FromMovesFile(branchFile).MoveCount);
+            Assert.AreEqual(5, ReplayTimeline.FromMovesFile(movesFile).MoveCount);
+
+            // The branch continues like any saved match.
+            var c = MatchSave.Continue(branch.WriteBoardFile(), branchFile);
+            Assert.IsTrue(c.HistoryRestored);
+            for (int i = 0; i < 4; i++) Assert.IsTrue(c.Game.Undo());
+            Assert.AreEqual(Describe(new Game()), Describe(c.Game));
+        }
+
+        [Test]
+        public void TakeOverAtTheStartAndAtTheEnd()
+        {
+            var g = new Game(Game.ClassicFen); var rec = MatchRecorder.Start(g);
+            Play(g, "e2e4", "e7e5");
+            var t = TimelineOf(rec);
+
+            var atStart = t.ResumeAt(0);
+            Assert.AreEqual(0, atStart.Game.History.Count);
+            Assert.AreEqual(Describe(new Game(Game.ClassicFen)), Describe(atStart.Game));
+            Play(atStart.Game, "d2d4");
+            Assert.AreEqual(1, ReplayTimeline.FromMovesFile(atStart.WriteMovesFile()).MoveCount);
+
+            var atEnd = t.ResumeAt(2);
+            Assert.AreEqual(Describe(g), Describe(atEnd.Game));
+            Assert.Throws<ArgumentOutOfRangeException>(() => t.ResumeAt(3));
+            Assert.Throws<ArgumentOutOfRangeException>(() => t.ResumeAt(-1));
+        }
+
+        [Test]
+        public void ResignationStaysOnlyWhenNothingIsCutOff()
+        {
+            var g = new Game(); var rec = MatchRecorder.Start(g);
+            Play(g, "e3e4", "e6e5");
+            g.Resign(PieceColor.White);
+            var t = TimelineOf(rec);
+            Assert.AreEqual(GameStatus.Resignation, t.ResumeAt(2).Game.Status);
+            Assert.AreEqual(GameStatus.Ongoing, t.ResumeAt(1).Game.Status, "taking over before the resignation reopens the game");
+        }
+
+        [Test]
+        public void TakeOverKeepsPowerUpState()
+        {
+            // Two captures by the e-pawn make it berserk; taking over after them must keep that.
+            var g = new Game("4k3/8/2p5/3p4/4P3/8/8/4K3 w - - 0 1"); var rec = MatchRecorder.Start(g);
+            Play(g, "e4d5", "e8e7", "d5c6", "e7e6");
+            var branch = TimelineOf(rec).ResumeAt(3);
+            Assert.IsTrue(branch.Game.Board[S("c6")].IsBerserk);
+            Assert.AreEqual(2, branch.Game.Board[S("c6")].CaptureCount);
+            var branch2 = TimelineOf(rec).ResumeAt(1);
+            Assert.IsFalse(branch2.Game.Board[S("d5")].IsBerserk);
+            Assert.AreEqual(1, branch2.Game.Board[S("d5")].CaptureCount);
+        }
     }
 }

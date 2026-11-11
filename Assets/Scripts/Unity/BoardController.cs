@@ -66,6 +66,7 @@ namespace Chess.Unity
         // Save files of the current match (written after every move / undo / resign / draw).
         MatchRecorder _recorder;
         bool _matchStarted;   // a fresh game only replaces the saved match once something happens in it
+        int _unsavedBaseline; // moves already in the game when it appeared (a replay takeover); not saved until that changes
         bool _hasSave;        // cached File.Exists for the Continue button
         string _notice;
         float _noticeUntil;
@@ -121,6 +122,7 @@ namespace Chess.Unity
             _game = game;
             _recorder = recorder;
             _matchStarted = fromSave;
+            _unsavedBaseline = game.History.Count;
             _game.MoveMade += OnMoveMade;
             _game.StateChanged += SaveMatch;
 
@@ -143,7 +145,8 @@ namespace Chess.Unity
         {
             if (!_matchStarted)
             {
-                if (_game.History.Count == 0 && !_game.IsOver) return; // e.g. a draw offer before the first move
+                // Nothing has happened yet (e.g. only a draw offer before the first move): leave the saved match alone.
+                if (_game.History.Count == _unsavedBaseline && !_game.IsOver) return;
                 _matchStarted = true;
             }
             try

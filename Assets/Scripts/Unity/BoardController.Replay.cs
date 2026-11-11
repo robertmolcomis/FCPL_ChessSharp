@@ -27,7 +27,7 @@ namespace Chess.Unity
         int _replayPly;                       // frame on screen (or the one being animated to)
         float _sliderValue;
         float _repeatAt;
-        bool _replayRulesSwitched, _powerUpsBeforeReplay;
+        bool _replayRulesSwitched, _powerUpsBeforeReplay, _replayClassic;
 
         Coroutine _replayTween;
         readonly List<GameObject> _raisedViews = new List<GameObject>(); // drawn on top while sliding
@@ -84,6 +84,7 @@ namespace Chess.Unity
             _state = InputState.Idle;
 
             _replay = timeline;
+            _replayClassic = classic;
             _replayRulesSwitched = switchRules;
             _powerUpsBeforeReplay = powerUpsBefore;
             _replayPly = 0;
@@ -102,6 +103,27 @@ namespace Chess.Unity
             _replayRulesSwitched = false;
             RebuildPieces();
             RefreshHighlights();
+        }
+
+        /// <summary>
+        /// Leaves the replay and plays on from the move on screen. The saved match is NOT touched here: the new game
+        /// only replaces it when its first move (or another change) is made, so just looking never overwrites anything.
+        /// </summary>
+        void PlayFromHere()
+        {
+            var frame = _replay.Frames[_replayPly];
+            if (frame.Status.IsOver()) return;
+
+            StopReplayTween();
+            var recorder = _replay.ResumeAt(_replayPly);
+            int ply = _replayPly;
+            _replay = null;
+            _replayTween = null;
+            classicMode = _replayClassic; // the rules the replay loaded stay: the match was played with them
+            _replayRulesSwitched = false;
+            ShowGame(recorder.Game, recorder, fromSave: false);
+            ShowNotice(ply == 0 ? "Playing from the start — your first move replaces the saved match"
+                                : $"Playing on from move {ply} — your first move replaces the saved match", 6f);
         }
 
         // ───────────────────────── input ─────────────────────────
@@ -294,7 +316,7 @@ namespace Chess.Unity
             GUI.enabled = last > 0;
 
             // The slider snaps to whole moves and jumps without animation, so a fast drag shows every position at once.
-            var sliderRect = new Rect(200, top + ReplayBarHeight / 2f - 6, Mathf.Max(50, Screen.width - 330), 12);
+            var sliderRect = new Rect(200, top + ReplayBarHeight / 2f - 6, Mathf.Max(50, Screen.width - 500), 12);
             float value = GUI.HorizontalSlider(sliderRect, _sliderValue, 0, Mathf.Max(1, last));
             if (last > 0 && !Mathf.Approximately(value, _sliderValue))
             {
@@ -302,6 +324,10 @@ namespace Chess.Unity
                 int target = Mathf.RoundToInt(value);
                 if (target != _replayPly) ReplayGoTo(target, animate: false);
             }
+            GUI.enabled = true;
+
+            GUI.enabled = !_replay.Frames[_replayPly].Status.IsOver(); // nothing to play on after a checkmate / resignation
+            if (GUI.Button(new Rect(Screen.width - 290, y, 160, h), "Play from here")) { PlayFromHere(); GUI.enabled = true; return; }
             GUI.enabled = true;
 
             GUI.Label(new Rect(Screen.width - 120, top, 110, ReplayBarHeight), $"{_replayPly} / {last}", _counterStyle);

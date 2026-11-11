@@ -109,6 +109,18 @@ namespace Chess.Core
             internal StartKind Kind;
             internal BitWriter StartPosition;
 
+            /// <summary>
+            /// The same match cut after <paramref name="ply"/> moves. A resignation / agreed draw belongs to the end of the
+            /// match, so it is kept only when nothing is cut off.
+            /// </summary>
+            internal SavedMoves Truncated(int ply)
+            {
+                var cut = new SavedMoves { Kind = Kind, StartPosition = StartPosition };
+                cut.Moves.AddRange(Moves.GetRange(0, ply));
+                if (ply == Moves.Count) cut.Outcome = Outcome;
+                return cut;
+            }
+
             /// <summary>Plays every move on a new copy of the start position (and applies a resignation / agreed draw).</summary>
             public Game PlayOut()
             {
