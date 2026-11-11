@@ -14,7 +14,7 @@ namespace Chess.Unity
     /// Drop it on an empty GameObject in the scene and press Play — everything else is built at runtime.
     /// It never decides legality: it asks the engine (Game.GetMovesFrom) and draws the result.
     /// </summary>
-    public class BoardController : MonoBehaviour
+    public partial class BoardController : MonoBehaviour
     {
         enum InputState { Idle, PieceSelected, PromotionPick, Animating }
 
@@ -104,6 +104,7 @@ namespace Chess.Unity
 
         void NewGame()
         {
+            ExitReplay();
             var game = new Game(!string.IsNullOrWhiteSpace(startFen) ? startFen : classicMode ? Game.ClassicFen : Game.StartFen);
             ShowGame(game, MatchRecorder.Start(game), fromSave: false);
         }
@@ -162,6 +163,7 @@ namespace Chess.Unity
         void ContinueLastMatch()
         {
             if (_state == InputState.Animating) return;
+            ExitReplay();
 
             byte[] boardFile, movesFile;
             bool classic;
@@ -250,8 +252,7 @@ namespace Chess.Unity
 
         void RebuildPieces()
         {
-            foreach (var go in _pieceViews.Values) Destroy(go);
-            _pieceViews.Clear();
+            ClearPieceViews();
             foreach (var (sq, piece) in _game.Board.Pieces())
                 _pieceViews[piece.Id] = CreatePieceView(piece.Definition, piece.Color, SquareToWorld(sq), _piecesRoot,
                                                         piece.IsWall ? OrderWall : OrderPiece,
@@ -356,6 +357,7 @@ namespace Chess.Unity
 
         void Update()
         {
+            if (_replay != null) { UpdateReplay(); return; } // replay has its own controls
             if (_state == InputState.Animating) return; // input locked
 
             var mouse = Mouse.current;
@@ -641,8 +643,10 @@ namespace Chess.Unity
 
             GUI.Box(new Rect(0, 0, Screen.width, HudBarHeight), GUIContent.none);
 
+            bool replay = _replay != null;
             string status;
             if (_notice != null && Time.time < _noticeUntil) status = _notice;
+            else if (replay) status = ReplayStatus();
             else if (_game.IsOver) status = _game.Status.Describe(_game.Winner);
             else
             {
@@ -650,22 +654,30 @@ namespace Chess.Unity
                 if (_game.IsInCheck(_game.SideToMove)) status += " — CHECK!";
                 if (_game.DrawOfferedBy == _game.SideToMove) status += "  (draw offered)";
             }
-            GUI.Label(new Rect(12, 0, Screen.width - 572, HudBarHeight), status, _statusStyle);
+            GUI.Label(new Rect(12, 0, Screen.width - 684, HudBarHeight), status, _statusStyle);
 
             bool busy = _state == InputState.Animating;
-            float x = Screen.width - 562, y = 7, w = 105, h = HudBarHeight - 14;
+            float x = Screen.width - 674, y = 7, w = 105, h = HudBarHeight - 14;
             GUI.enabled = !busy && _hasSave;
             if (GUI.Button(new Rect(x, y, w, h), "Continue")) ContinueLastMatch();
             x += 112;
-            GUI.enabled = !busy;
+            GUI.enabled = !busy && (replay || _hasSave);
+            if (GUI.Button(new Rect(x, y, w, h), replay ? "Exit replay" : "Replay"))
+            {
+                if (replay) ExitReplay(); else EnterReplay();
+            }
+            x += 112;
+            GUI.enabled = !busy && !replay;
             if (GUI.Button(new Rect(x, y, w, h), "Undo")) DoUndo();
-            GUI.enabled = !busy && !_game.IsOver && _game.DrawOfferedBy == null;
+            GUI.enabled = !busy && !replay && !_game.IsOver && _game.DrawOfferedBy == null;
             if (GUI.Button(new Rect(x + 112, y, w, h), "Offer draw")) _game.OfferDraw(_game.SideToMove);
-            GUI.enabled = !busy && !_game.IsOver;
+            GUI.enabled = !busy && !replay && !_game.IsOver;
             if (GUI.Button(new Rect(x + 224, y, w, h), "Resign")) { _game.Resign(_game.SideToMove); Deselect(); }
             GUI.enabled = !busy;
             if (GUI.Button(new Rect(x + 336, y, w, h), "New game")) NewGame();
             GUI.enabled = true;
+
+            if (_replay != null) { DrawReplayBar(); return; } // (checked again: a button above may have just started / ended it)
 
             if (DrawPromptVisible)
             {

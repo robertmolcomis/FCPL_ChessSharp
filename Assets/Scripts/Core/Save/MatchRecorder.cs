@@ -163,7 +163,7 @@ namespace Chess.Core
             return new MatchRecorder(game, history.Kind, history.StartPosition);
         }
 
-        static Game BuildStart(StartKind kind, BitWriter startPosition)
+        internal static Game BuildStart(StartKind kind, BitWriter startPosition)
         {
             switch (kind)
             {
