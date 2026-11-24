@@ -36,10 +36,17 @@ namespace Chess.Unity
         [SerializeField] Color background = new Color(0.16f, 0.17f, 0.20f);
 
         [Header("Pieces")]
-        [Tooltip("Optional. Leave empty to use generated placeholders.")]
+        [Tooltip("Piece art style. Can be changed while playing (here or from code via PieceSkin).")]
+        [SerializeField] PieceSkin pieceSkin = PieceSkin.Traditional;
+        [Tooltip("Optional. If set, used instead of the skin above (e.g. to try out new art).")]
         [SerializeField] PieceSpriteSet pieceSprites;
         [SerializeField] float pieceScale = 0.85f;
         [SerializeField] float moveDuration = 0.18f;
+
+        [Header("Sound")]
+        [Tooltip("Played when a piece lands. Leave empty to use Resources/Sounds/PieceMove.")]
+        [SerializeField] AudioClip moveSound;
+        [SerializeField, Range(0f, 1f)] float moveVolume = 0.7f;
 
         [Header("Mode")]
         [Tooltip("Classic = standard chess: classic start position and only \"rule\" abilities (no power-ups). " +
@@ -62,6 +69,11 @@ namespace Chess.Unity
         readonly Dictionary<int, GameObject> _pieceViews = new Dictionary<int, GameObject>();
         readonly List<GameObject> _highlightPool = new List<GameObject>();
         int _highlightsUsed;
+
+        PieceSpriteSet _activeSprites; // pieceSprites if set, otherwise the loaded pieceSkin
+        bool _skinDirty;               // skin changed; redraw pieces as soon as nothing is animating
+
+        AudioSource _audio;
 
         // Save files of the current match (written after every move / undo / resign / draw).
         MatchRecorder _recorder;
@@ -93,6 +105,13 @@ namespace Chess.Unity
             _pickerRoot = NewRoot("PromotionPicker");
 
             _hasSave = SaveFiles.HasLastMatch;
+            _activeSprites = ResolvePieceSprites();
+
+            // 2D sound: no position, so it sounds the same wherever the piece is.
+            if (moveSound == null) moveSound = Resources.Load<AudioClip>("Sounds/PieceMove");
+            _audio = gameObject.AddComponent<AudioSource>();
+            _audio.playOnAwake = false;
+            _audio.spatialBlend = 0f;
             NewGame();
         }
 
@@ -266,7 +285,7 @@ namespace Chess.Unity
                                    bool berserk = false, bool killMark = false)
         {
             bool white = color == PieceColor.White;
-            var custom = pieceSprites != null ? pieceSprites.Get(def.Symbol, white) : null;
+            var custom = _activeSprites != null ? _activeSprites.Get(def.Symbol, white, berserk) : null;
 
             var root = new GameObject(name);
             root.transform.SetParent(parent, false);
@@ -295,9 +314,10 @@ namespace Chess.Unity
             else if (custom != null)
             {
                 var sr = CreateSprite("Sprite", root.transform, custom, Color.white, order);
-                // Fit any PNG into the square regardless of its pixels-per-unit.
+                // Fit any PNG into the square regardless of its pixels-per-unit. Walls fill (almost) the whole square.
                 float size = Mathf.Max(custom.bounds.size.x, custom.bounds.size.y);
-                sr.transform.localScale = Vector3.one * (squareSize * pieceScale / Mathf.Max(0.0001f, size));
+                float fill = def.IsWall ? 0.92f : pieceScale;
+                sr.transform.localScale = Vector3.one * (squareSize * fill / Mathf.Max(0.0001f, size));
             }
             else
             {
@@ -356,10 +376,55 @@ namespace Chess.Unity
             return sr;
         }
 
+        // ───────────────────────── Piece skin ─────────────────────────
+
+        /// <summary>
+        /// The piece art on screen. Setting it redraws every piece (right away, or after the current move animation).
+        /// e.g. <c>board.PieceSkin = PieceSkin.Dino;</c>
+        /// </summary>
+        public PieceSkin PieceSkin
+        {
+            get => pieceSkin;
+            set
+            {
+                if (pieceSkin == value) return;
+                pieceSkin = value;
+                _skinDirty = true;
+            }
+        }
+
+        PieceSpriteSet ResolvePieceSprites() => pieceSprites != null ? pieceSprites : PieceSkins.Load(pieceSkin);
+
+        // Changing the skin (or override) in the Inspector during Play takes effect immediately.
+        void OnValidate()
+        {
+            if (Application.isPlaying && _game != null) _skinDirty = true;
+        }
+
+        void TryApplyPieceSkin()
+        {
+            // Wait until no move is sliding and the promotion picker is closed.
+            if (_game == null || _state == InputState.Animating || _state == InputState.PromotionPick) return;
+            _skinDirty = false;
+
+            var sprites = ResolvePieceSprites();
+            if (sprites == _activeSprites) return;
+            _activeSprites = sprites;
+
+            if (_replay != null)
+            {
+                StopReplayTween();
+                ClearPieceViews();
+                ShowFrame(_replay.Frames[_replayPly]);
+            }
+            else RebuildPieces();
+        }
+
         // ───────────────────────── Input ─────────────────────────
 
         void Update()
         {
+            if (_skinDirty) TryApplyPieceSkin();
             if (_replay != null) { UpdateReplay(); return; } // replay has its own controls
             if (_state == InputState.Animating) return; // input locked
 
@@ -520,6 +585,7 @@ namespace Chess.Unity
 
             foreach (var mv in moving) SetSortingOffset(mv.view, OrderMoving - OrderPiece);
             float duration = Mathf.Max(0.0001f, moveDuration) * (bounce ? 2f : 1f);
+            PlayMoveSound(); // as the piece starts sliding
             for (float t = 0; t < 1f; t += Time.deltaTime / duration)
             {
                 float e = bounce ? 0.65f * Mathf.Sin(t * Mathf.PI) : 1f - (1f - t) * (1f - t); // out-and-back / ease-out
@@ -553,6 +619,11 @@ namespace Chess.Unity
 
             _state = InputState.Idle;
             RefreshHighlights();
+        }
+
+        void PlayMoveSound()
+        {
+            if (_audio != null && moveSound != null) _audio.PlayOneShot(moveSound, moveVolume);
         }
 
         static void SetSortingOffset(GameObject root, int delta)

@@ -18,16 +18,24 @@ namespace Chess.Unity
             public char symbol;
             public Sprite white;
             public Sprite black;
+            [Tooltip("Optional. Shown instead while the piece is berserk (pawns).")]
+            public Sprite berserkWhite;
+            [Tooltip("Optional. Shown instead while the piece is berserk (pawns).")]
+            public Sprite berserkBlack;
         }
 
         public List<Entry> entries = new List<Entry>();
 
-        public Sprite Get(char symbol, bool white)
+        /// <summary>The sprite for a piece; the berserk variant if asked for and present, else the normal one.</summary>
+        public Sprite Get(char symbol, bool white, bool berserk = false)
         {
             symbol = char.ToUpperInvariant(symbol);
             foreach (var e in entries)
                 if (char.ToUpperInvariant(e.symbol) == symbol)
-                    return white ? e.white : e.black;
+                {
+                    var rage = berserk ? (white ? e.berserkWhite : e.berserkBlack) : null;
+                    return rage != null ? rage : white ? e.white : e.black;
+                }
             return null;
         }
     }
