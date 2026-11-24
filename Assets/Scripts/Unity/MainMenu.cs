@@ -40,6 +40,12 @@ namespace Chess.Unity
         Text _message;
         float _messageUntil;
 
+        const string VolumeKey = "Volume";
+
+        // Before the first scene, so the saved volume also applies when the game scene is opened directly.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ApplySavedVolume() => AudioListener.volume = PlayerPrefs.GetFloat(VolumeKey, 1f);
+
         void Start()
         {
             _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -119,6 +125,7 @@ namespace Chess.Unity
         void CloseSettings()
         {
             _settingsPanel.SetActive(false);
+            PlayerPrefs.Save();
             _content.interactable = true;
             Select(_playPanel.activeSelf ? _normalButton : _playButton);
         }
@@ -229,7 +236,7 @@ namespace Chess.Unity
             BuildSettingsOverlay(canvas);
         }
 
-        /// <summary>Placeholder: the settings content comes later.</summary>
+        /// <summary>Settings: master volume (saved in PlayerPrefs).</summary>
         void BuildSettingsOverlay(RectTransform canvas)
         {
             var overlay = NewRect("Settings Overlay", canvas, typeof(Image));
@@ -248,9 +255,17 @@ namespace Chess.Unity
             heading.fontStyle = FontStyle.Bold;
             Place(heading.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -80), new Vector2(700, 100));
 
-            var body = MakeText(box, "Body", "Nothing to change here yet.", 36, TextAnchor.MiddleCenter);
-            body.color = new Color(textColor.r, textColor.g, textColor.b, 0.7f);
-            Place(body.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 10), new Vector2(700, 80));
+            var volumeLabel = MakeText(box, "Volume Label", "", 36, TextAnchor.MiddleCenter);
+            Place(volumeLabel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 50), new Vector2(700, 60));
+            var volume = MakeSlider(box, new Vector2(0, -20), new Vector2(600, 50));
+            volume.onValueChanged.AddListener(v =>
+            {
+                AudioListener.volume = v;
+                PlayerPrefs.SetFloat(VolumeKey, v);
+                volumeLabel.text = $"Volume  {Mathf.RoundToInt(v * 100)}%";
+            });
+            volume.value = AudioListener.volume;
+            volumeLabel.text = $"Volume  {Mathf.RoundToInt(volume.value * 100)}%";
 
             _settingsCloseButton = MakeButton(box, "Close", "Close", new Vector2(0.5f, 0), new Vector2(0.5f, 0),
                                               new Vector2(0, 40), new Vector2(260, 90), CloseSettings, 36);
@@ -275,14 +290,7 @@ namespace Chess.Unity
 
             var button = rt.GetComponent<Button>();
             button.targetGraphic = image;
-            var colors = button.colors;
-            colors.normalColor = buttonColor;
-            colors.highlightedColor = buttonHover;
-            colors.selectedColor = buttonHover;
-            colors.pressedColor = buttonPressed;
-            colors.disabledColor = new Color(0.32f, 0.33f, 0.37f, 0.8f);
-            colors.fadeDuration = 0.08f;
-            button.colors = colors;
+            button.colors = Tint(button.colors);
             button.onClick.AddListener(() => onClick());
 
             if (label != null)
@@ -291,6 +299,68 @@ namespace Chess.Unity
                 Stretch(text.rectTransform);
             }
             return button;
+        }
+
+        ColorBlock Tint(ColorBlock colors)
+        {
+            colors.normalColor = buttonColor;
+            colors.highlightedColor = buttonHover;
+            colors.selectedColor = buttonHover;
+            colors.pressedColor = buttonPressed;
+            colors.disabledColor = new Color(0.32f, 0.33f, 0.37f, 0.8f);
+            colors.fadeDuration = 0.08f;
+            return colors;
+        }
+
+        /// <summary>0–1 horizontal slider: rounded track, fill in the button colour, round handle. Left/Right arrows step 10%.</summary>
+        Slider MakeSlider(Transform parent, Vector2 position, Vector2 size)
+        {
+            const float handleWidth = 40f;
+            var rt = NewRect("Volume", parent, typeof(Slider));
+            Place(rt, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), position, size);
+
+            var track = NewRect("Track", rt, typeof(Image));
+            track.anchorMin = new Vector2(0, 0.3f);
+            track.anchorMax = new Vector2(1, 0.7f);
+            track.offsetMin = track.offsetMax = Vector2.zero;
+            var trackImage = track.GetComponent<Image>();
+            trackImage.sprite = _roundSprite;
+            trackImage.type = Image.Type.Sliced;
+            trackImage.color = new Color(0.12f, 0.13f, 0.15f);
+
+            // Fill and handle areas are inset by half a handle so the handle centre lines up with the fill's end.
+            var fillArea = NewRect("Fill Area", rt);
+            fillArea.anchorMin = new Vector2(0, 0.3f);
+            fillArea.anchorMax = new Vector2(1, 0.7f);
+            fillArea.offsetMin = new Vector2(handleWidth / 2, 0);
+            fillArea.offsetMax = new Vector2(-handleWidth / 2, 0);
+            var fill = NewRect("Fill", fillArea, typeof(Image));
+            fill.sizeDelta = Vector2.zero;
+            var fillImage = fill.GetComponent<Image>();
+            fillImage.sprite = _roundSprite;
+            fillImage.type = Image.Type.Sliced;
+            fillImage.color = buttonColor;
+            fillImage.raycastTarget = false;
+
+            var handleArea = NewRect("Handle Area", rt);
+            Stretch(handleArea);
+            handleArea.offsetMin = new Vector2(handleWidth / 2, 0);
+            handleArea.offsetMax = new Vector2(-handleWidth / 2, 0);
+            var handle = NewRect("Handle", handleArea, typeof(Image));
+            handle.sizeDelta = new Vector2(handleWidth, 0);
+            var handleImage = handle.GetComponent<Image>();
+            handleImage.sprite = _roundSprite;
+            handleImage.type = Image.Type.Sliced;
+            handleImage.color = Color.white; // the Slider's colour block tints it
+
+            var slider = rt.GetComponent<Slider>();
+            slider.fillRect = fill;
+            slider.handleRect = handle;
+            slider.targetGraphic = handleImage;
+            slider.colors = Tint(slider.colors);
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            return slider;
         }
 
         Text MakeText(Transform parent, string name, string value, int size, TextAnchor alignment)
