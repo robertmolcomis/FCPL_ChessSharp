@@ -36,9 +36,7 @@ namespace Chess.Unity
         [SerializeField] Color background = new Color(0.16f, 0.17f, 0.20f);
 
         [Header("Pieces")]
-        [Tooltip("Piece art style. Can be changed while playing (here or from code via PieceSkin).")]
-        [SerializeField] PieceSkin pieceSkin = PieceSkin.Traditional;
-        [Tooltip("Optional. If set, used instead of the skin above (e.g. to try out new art).")]
+        [Tooltip("Optional. If set, used instead of the skin chosen in the main menu's settings (e.g. to try out new art).")]
         [SerializeField] PieceSpriteSet pieceSprites;
         [SerializeField] float pieceScale = 0.85f;
         [SerializeField] float moveDuration = 0.18f;
@@ -75,7 +73,7 @@ namespace Chess.Unity
         readonly List<GameObject> _highlightPool = new List<GameObject>();
         int _highlightsUsed;
 
-        PieceSpriteSet _activeSprites; // pieceSprites if set, otherwise the loaded pieceSkin
+        PieceSpriteSet _activeSprites; // pieceSprites if set, otherwise the skin picked in the menu
         bool _skinDirty;               // skin changed; redraw pieces as soon as nothing is animating
 
         AudioSource _audio;
@@ -405,24 +403,9 @@ namespace Chess.Unity
 
         // ───────────────────────── Piece skin ─────────────────────────
 
-        /// <summary>
-        /// The piece art on screen. Setting it redraws every piece (right away, or after the current move animation).
-        /// e.g. <c>board.PieceSkin = PieceSkin.Dino;</c>
-        /// </summary>
-        public PieceSkin PieceSkin
-        {
-            get => pieceSkin;
-            set
-            {
-                if (pieceSkin == value) return;
-                pieceSkin = value;
-                _skinDirty = true;
-            }
-        }
+        PieceSpriteSet ResolvePieceSprites() => pieceSprites != null ? pieceSprites : PieceSkins.Current;
 
-        PieceSpriteSet ResolvePieceSprites() => pieceSprites != null ? pieceSprites : PieceSkins.Load(pieceSkin);
-
-        // Changing the skin (or override) in the Inspector during Play takes effect immediately.
+        // Changing the override in the Inspector during Play takes effect immediately.
         void OnValidate()
         {
             if (Application.isPlaying && _game != null) _skinDirty = true;

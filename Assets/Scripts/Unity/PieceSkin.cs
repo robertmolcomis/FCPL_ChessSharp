@@ -1,39 +1,46 @@
-using System.Collections.Generic;
+using System;
+using System.Linq;
 using UnityEngine;
 
 namespace Chess.Unity
 {
-    /// <summary>The piece art styles that ship with the game.</summary>
-    public enum PieceSkin
-    {
-        Traditional,
-        Dino,
-    }
-
     /// <summary>
-    /// Loads the <see cref="PieceSpriteSet"/> of a <see cref="PieceSkin"/>.
-    /// Each skin is an asset at Assets/Resources/PieceSkins/&lt;SkinName&gt;.asset that points at the PNGs in
-    /// Assets/Sprites/Pieces/&lt;SkinName&gt;/. To add a skin: add its PNGs, create a Piece Sprite Set asset with the
-    /// same name as a new enum value, and put it in Resources/PieceSkins.
+    /// The piece art styles: every <see cref="PieceSpriteSet"/> asset in Assets/Resources/PieceSkins/, found at runtime,
+    /// so a new skin needs no code. To add one, drop its PNGs in Assets/Sprites/Pieces/&lt;SkinName&gt;/White and /Black
+    /// named &lt;SkinName&gt;_White_King.png etc.: the editor (PieceSkinImporter) builds the asset for you.
+    /// The chosen skin is saved in PlayerPrefs.
     /// </summary>
     public static class PieceSkins
     {
-        const string Folder = "PieceSkins/";
-        static readonly Dictionary<PieceSkin, PieceSpriteSet> Cache = new Dictionary<PieceSkin, PieceSpriteSet>();
+        const string Folder = "PieceSkins";
+        const string PrefKey = "PieceSkin";
+        const string Default = "Traditional";
+
+        static PieceSpriteSet[] _all;
 
         /// <summary>Domain reload may be off ("Enter Play Mode Options"), so drop cached assets at the start of every run.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetCache() => Cache.Clear();
+        static void ResetCache() => _all = null;
 
-        /// <summary>The sprite set of <paramref name="skin"/>, or null (with a warning) if its asset is missing.</summary>
-        public static PieceSpriteSet Load(PieceSkin skin)
+        /// <summary>Every skin, sorted by name (the asset's file name).</summary>
+        public static PieceSpriteSet[] All =>
+            _all ??= Resources.LoadAll<PieceSpriteSet>(Folder).OrderBy(s => s.name, StringComparer.OrdinalIgnoreCase).ToArray();
+
+        /// <summary>The saved skin; falls back to Traditional, then the first one, then null (placeholder pieces).</summary>
+        public static PieceSpriteSet Current
         {
-            if (Cache.TryGetValue(skin, out var set) && set != null) return set;
-            set = Resources.Load<PieceSpriteSet>(Folder + skin);
-            if (set == null)
-                Debug.LogWarning($"Piece skin '{skin}' not found at Resources/{Folder}{skin}. Using placeholder pieces.");
-            Cache[skin] = set;
-            return set;
+            get
+            {
+                var all = All;
+                string name = PlayerPrefs.GetString(PrefKey, Default);
+                return all.FirstOrDefault(s => s.name == name) ?? all.FirstOrDefault(s => s.name == Default) ?? all.FirstOrDefault();
+            }
+            set
+            {
+                if (value == null) return;
+                PlayerPrefs.SetString(PrefKey, value.name);
+                PlayerPrefs.Save();
+            }
         }
     }
 }

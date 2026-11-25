@@ -37,7 +37,7 @@ namespace Chess.Unity
         GameObject _mainPanel, _playPanel, _settingsPanel;
         CanvasGroup _content; // everything except the settings overlay
         Button _playButton, _continueButton, _replayButton, _normalButton, _settingsCloseButton;
-        Text _message;
+        Text _message, _skinName;
         float _messageUntil;
 
         const string VolumeKey = "Volume";
@@ -128,6 +128,17 @@ namespace Chess.Unity
             PlayerPrefs.Save();
             _content.interactable = true;
             Select(_playPanel.activeSelf ? _normalButton : _playButton);
+        }
+
+        /// <summary>Moves the piece skin choice by <paramref name="step"/> (wrapping around) and saves it; 0 just shows the current one.</summary>
+        void StepSkin(int step)
+        {
+            var skins = PieceSkins.All;
+            if (skins.Length == 0) { _skinName.text = "None found"; return; }
+            int i = Mathf.Max(0, Array.IndexOf(skins, PieceSkins.Current));
+            i = ((i + step) % skins.Length + skins.Length) % skins.Length;
+            if (step != 0) PieceSkins.Current = skins[i];
+            _skinName.text = skins[i].name;
         }
 
         /// <summary>Continue needs the saved board; Replay needs the saved move list.</summary>
@@ -245,7 +256,7 @@ namespace Chess.Unity
             _settingsPanel = overlay.gameObject;
 
             var box = NewRect("Box", overlay, typeof(Image));
-            Place(box, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(820, 480));
+            Place(box, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(820, 640));
             var boxImage = box.GetComponent<Image>();
             boxImage.sprite = _roundSprite;
             boxImage.type = Image.Type.Sliced;
@@ -256,8 +267,8 @@ namespace Chess.Unity
             Place(heading.rectTransform, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -80), new Vector2(700, 100));
 
             var volumeLabel = MakeText(box, "Volume Label", "", 36, TextAnchor.MiddleCenter);
-            Place(volumeLabel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 50), new Vector2(700, 60));
-            var volume = MakeSlider(box, new Vector2(0, -20), new Vector2(600, 50));
+            Place(volumeLabel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 115), new Vector2(700, 60));
+            var volume = MakeSlider(box, new Vector2(0, 55), new Vector2(600, 50));
             volume.onValueChanged.AddListener(v =>
             {
                 AudioListener.volume = v;
@@ -266,6 +277,15 @@ namespace Chess.Unity
             });
             volume.value = AudioListener.volume;
             volumeLabel.text = $"Volume  {Mathf.RoundToInt(volume.value * 100)}%";
+
+            // Piece skin: "<  Name  >", cycling through every skin asset that exists (PieceSkins.All).
+            var skinLabel = MakeText(box, "Skin Label", "Pieces", 36, TextAnchor.MiddleCenter);
+            Place(skinLabel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -15), new Vector2(700, 60));
+            _skinName = MakeText(box, "Skin Name", "", 40, TextAnchor.MiddleCenter);
+            Place(_skinName.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -85), new Vector2(380, 70));
+            MakeButton(box, "Previous Skin", "<", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-240, -85), new Vector2(90, 70), () => StepSkin(-1));
+            MakeButton(box, "Next Skin", ">", new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(240, -85), new Vector2(90, 70), () => StepSkin(1));
+            StepSkin(0);
 
             _settingsCloseButton = MakeButton(box, "Close", "Close", new Vector2(0.5f, 0), new Vector2(0.5f, 0),
                                               new Vector2(0, 40), new Vector2(260, 90), CloseSettings, 36);
