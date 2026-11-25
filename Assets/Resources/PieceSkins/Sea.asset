@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e26754b42b40814c94b9462cb18386f, type: 3}
+  m_Name: Sea
+  m_EditorClassIdentifier: Chess.Unity::Chess.Unity.PieceSpriteSet
+  entries:
+  - symbol: 80
+    white: {fileID: -227937954632437265, guid: 9e0ddafd0bfa900498f44f24f29c2616, type: 3}
+    black: {fileID: 501712565800584627, guid: 566872ef35679b648aa1d51521c50eb6, type: 3}
+    berserkWhite: {fileID: 6726381620213350773, guid: 3d6f60d99db8efd4fad1bf33cf55dffb, type: 3}
+    berserkBlack: {fileID: -988979207077845287, guid: d817ab212b00dd740b48e41e4305bbb7, type: 3}
+  - symbol: 78
+    white: {fileID: 3905693837103829186, guid: cc1ad88e5cb2f8547b82ccc195ecc7f8, type: 3}
+    black: {fileID: -4876809468515732358, guid: 1104358afeef2ea4b865969648544a05, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}
+  - symbol: 66
+    white: {fileID: 736587041179666011, guid: 979c56f267e6ef34abc6f96248202d53, type: 3}
+    black: {fileID: -327044488729073983, guid: 60642246701f7af4ea456c56098c2687, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}
+  - symbol: 82
+    white: {fileID: -164109279032463923, guid: cb0d3f92f34f4ea4c9789fc809321b88, type: 3}
+    black: {fileID: -1531901692448977387, guid: 85b775990918bfa47a37986f38fbe052, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}
+  - symbol: 81
+    white: {fileID: -8090301095978004567, guid: 99b3526935817b942bcca04759cf4f0e, type: 3}
+    black: {fileID: 1636670345583482084, guid: f28f1384e4e1b0548999536bd0233f1f, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}
+  - symbol: 75
+    white: {fileID: 5619843466524466632, guid: 77541cdee00c8ab41a2df0b370ff1d1c, type: 3}
+    black: {fileID: 5594911309483085647, guid: 72703546c546e4348a4bb9e60afdc9e5, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}
+  - symbol: 65
+    white: {fileID: -7470690313725986342, guid: 94c889da642cb494cb5f816d85036d4f, type: 3}
+    black: {fileID: -3065845275493254606, guid: 3f3ac0244b87df145b785630d6e33434, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}
+  - symbol: 67
+    white: {fileID: -2377754711774322325, guid: 911a39fd8504a87489cc58f6c84a909c, type: 3}
+    black: {fileID: 5755998977190861354, guid: 172ceb979fbd8ad458bfbdb2484b7992, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}
+  - symbol: 87
+    white: {fileID: 2465201533208322723, guid: 77ce19ea0e89ad641937f7a0eb4fe5f6, type: 3}
+    black: {fileID: -4674410669322003696, guid: 4754a559b767a404b8c8c7ec2aaded70, type: 3}
+    berserkWhite: {fileID: 0}
+    berserkBlack: {fileID: 0}

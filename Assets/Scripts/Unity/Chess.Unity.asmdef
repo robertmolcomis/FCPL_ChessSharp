@@ -3,7 +3,8 @@
     "rootNamespace": "Chess.Unity",
     "references": [
         "Chess.Core",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "Unity.ugui"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

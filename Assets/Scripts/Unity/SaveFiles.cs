@@ -20,6 +20,9 @@ namespace Chess.Unity
         /// <summary>Continue needs at least the board file.</summary>
         public static bool HasLastMatch => File.Exists(BoardPath);
 
+        /// <summary>Replay needs the move-history file.</summary>
+        public static bool HasLastMoves => File.Exists(MovesPath);
+
         public static void Write(byte[] movesFile, byte[] boardFile)
         {
             Directory.CreateDirectory(Folder);

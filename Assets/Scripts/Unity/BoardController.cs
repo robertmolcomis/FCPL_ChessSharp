@@ -36,9 +36,7 @@ namespace Chess.Unity
         [SerializeField] Color background = new Color(0.16f, 0.17f, 0.20f);
 
         [Header("Pieces")]
-        [Tooltip("Piece art style. Can be changed while playing (here or from code via PieceSkin).")]
-        [SerializeField] PieceSkin pieceSkin = PieceSkin.Traditional;
-        [Tooltip("Optional. If set, used instead of the skin above (e.g. to try out new art).")]
+        [Tooltip("Optional. If set, used instead of the skin chosen in the main menu's settings (e.g. to try out new art).")]
         [SerializeField] PieceSpriteSet pieceSprites;
         [SerializeField] float pieceScale = 0.85f;
         [SerializeField] float moveDuration = 0.18f;
@@ -50,8 +48,13 @@ namespace Chess.Unity
 
         [Header("Mode")]
         [Tooltip("Classic = standard chess: classic start position and only \"rule\" abilities (no power-ups). " +
-                 "Applies when Play starts. Temporary until the menu exists.")]
+                 "Only used when this scene is opened directly (Play from the game scene); " +
+                 "the main menu's choice (Normal / Enhanced) overrides it.")]
         [SerializeField] bool classicMode;
+
+        [Header("Menu")]
+        [Tooltip("Scene the \"Menu\" button returns to (must be in the Build Profiles scene list).")]
+        [SerializeField] string menuSceneName = "MainMenu";
 
         [Header("Debug")]
         [Tooltip("Optional FEN to start from (empty = the mode's start position).")]
@@ -70,7 +73,7 @@ namespace Chess.Unity
         readonly List<GameObject> _highlightPool = new List<GameObject>();
         int _highlightsUsed;
 
-        PieceSpriteSet _activeSprites; // pieceSprites if set, otherwise the loaded pieceSkin
+        PieceSpriteSet _activeSprites; // pieceSprites if set, otherwise the skin picked in the menu
         bool _skinDirty;               // skin changed; redraw pieces as soon as nothing is animating
 
         AudioSource _audio;
@@ -90,6 +93,10 @@ namespace Chess.Unity
 
         void Start()
         {
+            // What the main menu asked for (null when this scene was opened directly: inspector settings apply).
+            var config = GameConfig.Take();
+            if (config != null && config.Mode == StartMode.NewGame) classicMode = config.Classic;
+
             // Piece and ability definitions come from StreamingAssets/Data/*.json.
             if (!RulesBootstrap.Load(includePowerUps: !classicMode)) { enabled = false; return; }
 
@@ -112,7 +119,25 @@ namespace Chess.Unity
             _audio = gameObject.AddComponent<AudioSource>();
             _audio.playOnAwake = false;
             _audio.spatialBlend = 0f;
+
+            // Always start from a normal game: Continue / Replay then load the save on top of it, so if the save
+            // turns out to be missing or damaged the player still gets a playable board (and the reason as a notice).
+            // A fresh game never touches the saved match until something is played in it.
             NewGame();
+            if (config == null) return;
+            if (config.Mode == StartMode.Continue) ContinueLastMatch();
+            else if (config.Mode == StartMode.Replay) EnterReplay();
+        }
+
+        void BackToMenu()
+        {
+            if (_state == InputState.Animating) return;
+            if (!Application.CanStreamedLevelBeLoaded(menuSceneName))
+            {
+                ShowNotice($"Scene \"{menuSceneName}\" isn't in the Build Profiles scene list", 6f);
+                return;
+            }
+            UnityEngine.SceneManagement.SceneManager.LoadScene(menuSceneName);
         }
 
         Transform NewRoot(string name)
@@ -378,24 +403,9 @@ namespace Chess.Unity
 
         // ───────────────────────── Piece skin ─────────────────────────
 
-        /// <summary>
-        /// The piece art on screen. Setting it redraws every piece (right away, or after the current move animation).
-        /// e.g. <c>board.PieceSkin = PieceSkin.Dino;</c>
-        /// </summary>
-        public PieceSkin PieceSkin
-        {
-            get => pieceSkin;
-            set
-            {
-                if (pieceSkin == value) return;
-                pieceSkin = value;
-                _skinDirty = true;
-            }
-        }
+        PieceSpriteSet ResolvePieceSprites() => pieceSprites != null ? pieceSprites : PieceSkins.Current;
 
-        PieceSpriteSet ResolvePieceSprites() => pieceSprites != null ? pieceSprites : PieceSkins.Load(pieceSkin);
-
-        // Changing the skin (or override) in the Inspector during Play takes effect immediately.
+        // Changing the override in the Inspector during Play takes effect immediately.
         void OnValidate()
         {
             if (Application.isPlaying && _game != null) _skinDirty = true;
@@ -728,10 +738,10 @@ namespace Chess.Unity
                 if (_game.IsInCheck(_game.SideToMove)) status += " — CHECK!";
                 if (_game.DrawOfferedBy == _game.SideToMove) status += "  (draw offered)";
             }
-            GUI.Label(new Rect(12, 0, Screen.width - 684, HudBarHeight), status, _statusStyle);
+            GUI.Label(new Rect(12, 0, Screen.width - 796, HudBarHeight), status, _statusStyle);
 
             bool busy = _state == InputState.Animating;
-            float x = Screen.width - 674, y = 7, w = 105, h = HudBarHeight - 14;
+            float x = Screen.width - 786, y = 7, w = 105, h = HudBarHeight - 14;
             GUI.enabled = !busy && _hasSave;
             if (GUI.Button(new Rect(x, y, w, h), "Continue")) ContinueLastMatch();
             x += 112;
@@ -749,6 +759,7 @@ namespace Chess.Unity
             if (GUI.Button(new Rect(x + 224, y, w, h), "Resign")) { _game.Resign(_game.SideToMove); Deselect(); }
             GUI.enabled = !busy;
             if (GUI.Button(new Rect(x + 336, y, w, h), "New game")) NewGame();
+            if (GUI.Button(new Rect(x + 448, y, w, h), "Menu")) { BackToMenu(); return; }
             GUI.enabled = true;
 
             if (_replay != null) { DrawReplayBar(); return; } // (checked again: a button above may have just started / ended it)
